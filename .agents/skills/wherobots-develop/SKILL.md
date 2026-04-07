@@ -11,6 +11,7 @@ Use this skill when writing code, submitting jobs, or building integrations with
 
 Before implementing spatial job logic, use the MCP server to understand what data is actually available:
 
+- Use `search_documentation_tool` to look up Wherobots features, Sedona spatial functions, storage integration setup, or catalog configuration before implementing
 - Browse `wherobots_open_data` with `list_databases_tool` / `list_tables_tool` to find pre-loaded datasets (Overture, FEMA, OpenStreetMap, etc.)
 - Use `describe_table_tool` to confirm geometry column names, CRS, and relevant filter fields
 - Test the spatial logic with `execute_query_tool` using `LIMIT 10` before committing to a job file
