@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Skill Frontmatter",
+  "description": "JSON Schema for validating SKILL.md frontmatter in Wherobots agent skills.",
+  "type": "object",
+  "required": ["name", "description"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Skill name. Must be lowercase, alphanumeric with hyphens. Must match the parent directory name."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 300,
+      "description": "Brief description of what the skill provides and when it should be triggered."
+    }
+  },
+  "additionalProperties": false
+}

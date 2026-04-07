@@ -1,0 +1,81 @@
+name: validate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install validation tools
+        run: npm install -g ajv-cli markdownlint-cli
+
+      - name: Validate SKILL.md frontmatter
+        run: |
+          set -euo pipefail
+          for skill_dir in .agents/skills/*/; do
+            skill_file="${skill_dir}SKILL.md"
+            dir_name=$(basename "$skill_dir")
+
+            if [ ! -f "$skill_file" ]; then
+              echo "ERROR: Missing SKILL.md in $skill_dir"
+              exit 1
+            fi
+
+            # Extract YAML frontmatter (between --- markers)
+            frontmatter=$(sed -n '/^---$/,/^---$/p' "$skill_file" | sed '1d;$d')
+
+            # Convert YAML frontmatter to JSON for validation
+            echo "$frontmatter" | python3 -c "
+          import sys, json, yaml
+          data = yaml.safe_load(sys.stdin.read())
+          json.dump(data, sys.stdout)
+          " > /tmp/frontmatter.json
+
+            # Validate against schema
+            ajv validate -s schemas/skill-frontmatter.json -d /tmp/frontmatter.json --spec=draft2020
+
+            # Assert name matches directory
+            fm_name=$(python3 -c "import json; print(json.load(open('/tmp/frontmatter.json'))['name'])")
+            if [ "$fm_name" != "$dir_name" ]; then
+              echo "ERROR: Frontmatter name '$fm_name' does not match directory name '$dir_name' in $skill_dir"
+              exit 1
+            fi
+
+            echo "OK: $skill_file"
+          done
+
+      - name: Lint SKILL.md files
+        run: markdownlint '.agents/skills/*/SKILL.md' --disable MD033 MD041
+
+      - name: Smoke test skills structure
+        run: |
+          set -euo pipefail
+          for skill_dir in .agents/skills/*/; do
+            skill_file="${skill_dir}SKILL.md"
+            if [ ! -f "$skill_file" ]; then
+              echo "ERROR: Missing SKILL.md in $skill_dir"
+              exit 1
+            fi
+            # Verify frontmatter has required fields
+            python3 -c "
+          import yaml, sys
+          with open('$skill_file') as f:
+              content = f.read()
+          fm = content.split('---')[1]
+          data = yaml.safe_load(fm)
+          assert 'name' in data, 'Missing name field'
+          assert 'description' in data, 'Missing description field'
+          print(f'  Skill: {data[\"name\"]} - OK')
+          "
+          done
+          echo "All skills validated successfully."
