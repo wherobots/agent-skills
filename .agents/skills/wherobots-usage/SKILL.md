@@ -24,7 +24,9 @@ All interfaces use the same API key:
 - **VS Code extension**: stores the key in VS Code SecretStorage (set via Command Palette)
 - **Endpoint override**: `WHEROBOTS_API_URL` env var overrides the default `https://api.cloud.wherobots.com`
 
-**For production/automated jobs, always use a service principal API key**, not a personal user key. Service principals (Professional/Enterprise, created by org admins) are not tied to any individual — jobs using them remain functional when team members leave. Personal API keys are for development only.
+**For production/automated jobs, always use a service principal API key**, not a personal user key. Service principals are not tied to any individual — jobs remain functional when team members leave. Personal API keys are for development only.
+
+Service principals and their API keys can be created via the API using `wherobots api` CLI commands (discover with `wherobots api --help`), enabling fully agentic setup without dashboard access. The org must be on Professional or Enterprise edition and the authenticating key must belong to an org admin.
 
 ## Scheduled / Recurring Jobs
 
@@ -46,3 +48,8 @@ WherobotsRunOperator(
 ```
 
 **Do not** use `wherobots-python-dbapi` inside an Airflow `PythonOperator` for this — that opens an interactive SQL session (billed compute) rather than submitting a managed job run. Use `WherobotsSqlOperator` from the same provider only for lightweight SQL-only tasks.
+
+The full agentic setup flow is achievable without any dashboard access:
+1. Use `wherobots api` to create a service principal and generate its API key
+2. Use `wherobots job-runs create <local-script.py>` to auto-upload the job file to managed storage (returns the S3 URI)
+3. Use that S3 URI as `app_location` in `WherobotsRunOperator`
