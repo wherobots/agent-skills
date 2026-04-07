@@ -7,6 +7,10 @@ description: Meta-knowledge for developing with the Wherobots CLI, Python SDK, a
 
 Use this skill when writing code, submitting jobs, or building integrations with the Wherobots platform.
 
+## CLI-First for API Operations
+
+When implementing a workflow that involves Wherobots API operations (creating job runs, checking status, listing resources, managing workspaces), **plan to use the `wherobots` CLI first**. The CLI covers the full job lifecycle and is the right tool for operational tasks; reach for the Python or TypeScript SDK only when you need to integrate results into application code.
+
 ## CLI Discovery Pattern
 
 The `wherobots` CLI generates `wherobots api` subcommands from a live OpenAPI spec that changes without notice. Never hardcode or memorize `api` subcommand names.
