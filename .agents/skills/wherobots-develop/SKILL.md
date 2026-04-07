@@ -15,7 +15,14 @@ Before implementing spatial job logic, use the MCP server to understand what dat
 - Use `describe_table_tool` to confirm geometry column names, CRS, and relevant filter fields
 - Test the spatial logic with `execute_query_tool` using `LIMIT 10` before committing to a job file
 
-**Proprietary or external data**: Wherobots supports registering external catalogs (your own S3 buckets, GCS, etc.) as catalog sources so they appear alongside open data in Sedona SQL. Use `wherobots api` CLI commands to discover and configure storage integrations — this lets job code reference external tables the same way it references `wherobots_open_data`.
+**Job files**: Store job scripts in **Wherobots Managed Storage** (built-in S3, us-west-2) or in your own S3 bucket via a **Storage Integration**. Both are referenceable as `s3://` URIs in `WherobotsRunOperator` and `wherobots job-runs create`.
+
+**Proprietary data**: Three ways to bring in your own data:
+- **S3 Storage Integration** — connect your own S3 bucket; Wherobots can register it as a managed catalog so tables appear in Sedona SQL alongside open data
+- **Databricks Unity Catalog** — read Delta Lake and Apache Iceberg tables directly from a Databricks workspace (requires a Personal Access Token; Professional/Enterprise only; writing back to Delta is not currently supported)
+- **Havasu tables** — Wherobots' own Iceberg-based spatial table format; store in Managed Storage or your S3 integration and query like any catalog table
+
+Use `wherobots api` CLI commands to discover and configure storage integrations and catalog connections.
 
 ## CLI-First for API Operations
 
