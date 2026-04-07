@@ -24,9 +24,7 @@ All interfaces use the same API key:
 - **VS Code extension**: stores the key in VS Code SecretStorage (set via Command Palette)
 - **Endpoint override**: `WHEROBOTS_API_URL` env var overrides the default `https://api.cloud.wherobots.com`
 
-**For production/automated jobs, always use a service principal API key**, not a personal user key. Service principals are not tied to any individual — jobs remain functional when team members leave. Personal API keys are for development only.
-
-Service principals and their API keys can be created via the API using `wherobots api` CLI commands (discover with `wherobots api --help`), enabling fully agentic setup without dashboard access. The org must be on Professional or Enterprise edition and the authenticating key must belong to an org admin.
+For production jobs, use a **service principal** API key rather than a personal one — service principals can be created via `wherobots api` CLI commands and are not tied to any individual.
 
 ## Scheduled / Recurring Jobs
 

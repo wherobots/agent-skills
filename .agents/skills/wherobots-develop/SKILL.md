@@ -7,6 +7,16 @@ description: Meta-knowledge for developing with the Wherobots CLI, Python SDK, a
 
 Use this skill when writing code, submitting jobs, or building integrations with the Wherobots platform.
 
+## Data Discovery Before Writing Job Logic
+
+Before implementing spatial job logic, use the MCP server to understand what data is actually available:
+
+- Browse `wherobots_open_data` with `list_databases_tool` / `list_tables_tool` to find pre-loaded datasets (Overture, FEMA, OpenStreetMap, etc.)
+- Use `describe_table_tool` to confirm geometry column names, CRS, and relevant filter fields
+- Test the spatial logic with `execute_query_tool` using `LIMIT 10` before committing to a job file
+
+**Proprietary or external data**: Wherobots supports registering external catalogs (your own S3 buckets, GCS, etc.) as catalog sources so they appear alongside open data in Sedona SQL. Use `wherobots api` CLI commands to discover and configure storage integrations — this lets job code reference external tables the same way it references `wherobots_open_data`.
+
 ## CLI-First for API Operations
 
 When implementing a workflow that involves Wherobots API operations (creating job runs, checking status, listing resources, managing workspaces), **plan to use the `wherobots` CLI first**. The CLI covers the full job lifecycle and is the right tool for operational tasks; reach for the Python or TypeScript SDK only when you need to integrate results into application code.
