@@ -1,11 +1,34 @@
 ---
 name: wherobots-develop
-description: Meta-knowledge for developing with the Wherobots CLI, Python SDK, and TypeScript SDK — discovery patterns, non-obvious flags, and multi-step workflows.
+description: Use when writing Wherobots job code, submitting or monitoring jobs, or integrating with the Python/TypeScript SDK — covers CLI discovery patterns, non-obvious flags, job workflows, storage options, and data connectivity.
 ---
 
 # Wherobots Develop
 
-Use this skill when writing code, submitting jobs, or building integrations with the Wherobots platform.
+## Data Discovery Before Writing Job Logic
+
+Before implementing spatial job logic, use the MCP server to understand what data is actually available:
+
+- Use `search_documentation_tool` (MCP) to look up Wherobots features, Sedona spatial
+  functions, storage integration setup, or catalog configuration before implementing.
+  If the MCP server is unavailable, browse [docs.wherobots.com](https://docs.wherobots.com/latest/) directly.
+- Browse `wherobots_open_data` with `list_databases_tool` / `list_tables_tool` to find pre-loaded datasets (Overture, FEMA, OpenStreetMap, etc.)
+- Use `describe_table_tool` to confirm geometry column names, CRS, and relevant filter fields
+- Test the spatial logic with `execute_query_tool` using `LIMIT 10` before committing to a job file
+
+**Job files**: Store job scripts in **Wherobots Managed Storage** (built-in S3, us-west-2) or in your own S3 bucket via a **Storage Integration**. Both are referenceable as `s3://` URIs in `WherobotsRunOperator` and `wherobots job-runs create`.
+
+**Proprietary data**: Three ways to bring in your own data:
+
+- **S3 Storage Integration** — connect your own S3 bucket; Wherobots can register it as a managed catalog so tables appear in Sedona SQL alongside open data
+- **Databricks Unity Catalog** — read Delta Lake and Apache Iceberg tables directly from a Databricks workspace (requires a Personal Access Token; Professional/Enterprise only; writing back to Delta is not currently supported)
+- **Havasu tables** — Wherobots' own Iceberg-based spatial table format; store in Managed Storage or your S3 integration and query like any catalog table
+
+Use `wherobots api` CLI commands to discover and configure storage integrations and catalog connections.
+
+## CLI-First for API Operations
+
+When implementing a workflow that involves Wherobots API operations (creating job runs, checking status, listing resources, managing workspaces), **plan to use the `wherobots` CLI first**. The CLI covers the full job lifecycle and is the right tool for operational tasks; reach for the Python or TypeScript SDK only when you need to integrate results into application code.
 
 ## CLI Discovery Pattern
 
