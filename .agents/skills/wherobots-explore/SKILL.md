@@ -1,11 +1,9 @@
 ---
 name: wherobots-explore
-description: MCP workflow patterns for Wherobots data discovery, schema exploration, and spatial query generation.
+description: Use when exploring Wherobots catalogs, discovering table schemas, or generating spatial queries — covers the MCP tool workflow sequence, constraints, and shortcuts.
 ---
 
 # Wherobots Explore
-
-Use this skill when exploring Wherobots catalogs, discovering table schemas, or generating spatial queries through the MCP server.
 
 ## MCP Workflow Sequence
 

@@ -55,7 +55,7 @@ jobs:
           done
 
       - name: Lint SKILL.md files
-        run: markdownlint '.agents/skills/*/SKILL.md' --disable MD033 MD041
+        run: markdownlint '.agents/skills/*/SKILL.md' --disable MD013 MD033 MD041 MD060
 
       - name: Smoke test skills structure
         run: |

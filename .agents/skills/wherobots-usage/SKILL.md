@@ -1,11 +1,9 @@
 ---
 name: wherobots-usage
-description: Decision matrix for Wherobots interfaces — MCP, CLI, SDK, and Dashboard — plus auth setup and scheduling guidance.
+description: Use whenever working on any Wherobots task — provides the interface decision matrix (MCP vs CLI vs SDK vs dashboard), auth and service principal setup, and scheduled job patterns with Airflow.
 ---
 
 # Wherobots Usage
-
-Use this skill whenever working with the Wherobots spatial analytics platform to choose the right interface and configure authentication.
 
 ## Interface Decision Matrix
 
@@ -48,6 +46,8 @@ WherobotsRunOperator(
 **Do not** use `wherobots-python-dbapi` inside an Airflow `PythonOperator` for this — that opens an interactive SQL session (billed compute) rather than submitting a managed job run. Use `WherobotsSqlOperator` from the same provider only for lightweight SQL-only tasks.
 
 The full agentic setup flow is achievable without any dashboard access:
+
 1. Use `wherobots api` to create a service principal and generate its API key
-2. Use `wherobots job-runs create <local-script.py>` to auto-upload the job file to managed storage (returns the S3 URI)
+2. Use `wherobots job-runs create <local-script.py>` to auto-upload the job file
+   to managed storage (returns the S3 URI)
 3. Use that S3 URI as `app_location` in `WherobotsRunOperator`
