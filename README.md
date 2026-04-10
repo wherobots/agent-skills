@@ -9,6 +9,7 @@ Agent skills for the [Wherobots](https://wherobots.com) spatial analytics platfo
 | `wherobots-usage` | Decision matrix for choosing between MCP, CLI, SDK, and Dashboard; auth setup; scheduling guidance |
 | `wherobots-explore` | MCP workflow patterns for data discovery, schema exploration, and spatial query generation |
 | `wherobots-develop` | CLI discovery patterns, non-obvious flags, job submission workflow, Python and TypeScript SDK usage |
+| `wherobots-discover` | Fallback for sourcing external datasets from STAC APIs (Element84 Earth Search, Microsoft Planetary Computer) and loading them into Sedona when data is not in the Wherobots catalog |
 
 ## Installation
 
@@ -18,6 +19,7 @@ Agent skills for the [Wherobots](https://wherobots.com) spatial analytics platfo
 npx skills add wherobots/agent-skills@wherobots-usage
 npx skills add wherobots/agent-skills@wherobots-explore
 npx skills add wherobots/agent-skills@wherobots-develop
+npx skills add wherobots/agent-skills@wherobots-discover
 ```
 
 ### Via Wherobots VS Code Extension

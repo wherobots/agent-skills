@@ -25,3 +25,13 @@ Skipping steps (e.g., executing before exploring the schema) will produce errors
 ## Hierarchy Shortcut
 
 Use `list_hierarchy_tool` to get the full catalog -> database -> table tree in one call instead of making multiple sequential calls. Useful when you need an overview before drilling into a specific table.
+
+## When the Catalog Does Not Have the Needed Data
+
+If `list_hierarchy_tool` or `list_tables_tool` confirms the required dataset is absent from all catalogs, fall back to the **`wherobots-discover`** skill. It covers:
+
+- Searching STAC APIs (Element84 Earth Search, Microsoft Planetary Computer) to find publicly available satellite imagery, land cover, elevation, and other Earth observation data
+- Extracting asset URLs from STAC items
+- Loading GeoParquet, GeoJSON, and Cloud-Optimized GeoTIFF assets into Sedona for querying
+
+Do not generate queries against tables that do not exist in the catalog. Confirm presence with `list_tables_tool` first.

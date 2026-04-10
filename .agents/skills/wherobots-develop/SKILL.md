@@ -15,6 +15,7 @@ Before implementing spatial job logic, use the MCP server to understand what dat
 - Browse `wherobots_open_data` with `list_databases_tool` / `list_tables_tool` to find pre-loaded datasets (Overture, FEMA, OpenStreetMap, etc.)
 - Use `describe_table_tool` to confirm geometry column names, CRS, and relevant filter fields
 - Test the spatial logic with `execute_query_tool` using `LIMIT 10` before committing to a job file
+- **If the needed dataset is not in any catalog**, fall back to the **`wherobots-discover`** skill to source it from STAC APIs (Element84 Earth Search, Microsoft Planetary Computer) and load it into Sedona before writing job logic
 
 **Job files**: Store job scripts in **Wherobots Managed Storage** (built-in S3, us-west-2) or in your own S3 bucket via a **Storage Integration**. Both are referenceable as `s3://` URIs in `WherobotsRunOperator` and `wherobots job-runs create`.
 
