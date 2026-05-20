@@ -7,22 +7,30 @@ description: Use whenever working on any Wherobots task — provides the interfa
 
 ## Interface Decision Matrix
 
-| Task type | Use | Why |
-|---|---|---|
-| Data exploration, schema discovery, spatial Q&A in an AI chat session | **MCP server** | Interactive, read-only queries with catalog browsing |
-| Operational tasks: submit jobs, stream logs, check status, scripted automation | **`wherobots` CLI** | Full lifecycle control, scriptable, supports `--output json` |
-| Programmatic access in notebooks, application code, or pipelines | **Python SDK** (`wherobots-python-dbapi`) or **TypeScript SDK** (`wherobots-sql-driver`) | DB-API 2.0 / Arrow-based interfaces for integration |
-| Visual exploration, billing, workspace management | **Wherobots Dashboard** (cloud.wherobots.com) | GUI-only features like team management and billing |
+| Task type                                                                      | Use                                                                                      | Why                                                          |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Data exploration, schema discovery, spatial Q&A in an AI chat session          | **MCP server**                                                                           | Interactive, read-only queries with catalog browsing         |
+| Operational tasks: submit jobs, stream logs, check status, scripted automation | **`wherobots` CLI**                                                                      | Full lifecycle control, scriptable, supports `--output json` |
+| Programmatic access in notebooks, application code, or pipelines               | **Python SDK** (`wherobots-python-dbapi`) or **TypeScript SDK** (`wherobots-sql-driver`) | DB-API 2.0 / Arrow-based interfaces for integration          |
+| Visual exploration, billing, workspace management                              | **Wherobots Dashboard** (cloud.wherobots.com)                                            | GUI-only features like team management and billing           |
 
 ## Authentication
 
-All interfaces use the same API key:
+The auth method depends on the client:
 
-- **Environment variable**: `WHEROBOTS_API_KEY` -- used by CLI, SDKs, and MCP
-- **VS Code extension**: stores the key in VS Code SecretStorage (set via Command Palette)
-- **Endpoint override**: `WHEROBOTS_API_URL` env var overrides the default `https://api.cloud.wherobots.com`
+- **MCP server (OAuth — most clients)**: Clients authenticate via browser-based OAuth on first connect — you sign in to Wherobots and pick an organization. No API key in `mcp.json`.
+- **MCP server (API key fallback)**: Editors without OAuth support pass `X-Api-Key` via `mcp.json` headers.
+  If specified, API keys take precedence over OAuth.
+- **CLI / SDKs**: `WHEROBOTS_API_KEY` env var.
+- **VS Code extension (Wherobots)**: Stores the API key in VS Code
+  SecretStorage (set via Command Palette) and injects it into the MCP
+  connection automatically — no `mcp.json` entry needed.
+- **Endpoint override**: `WHEROBOTS_API_URL` env var overrides the default
+  `https://api.cloud.wherobots.com`.
 
-For production jobs, use a **service principal** API key rather than a personal one — service principals can be created via `wherobots api` CLI commands and are not tied to any individual.
+For production jobs, use a **service principal** API key rather than a personal
+one — service principals can be created via `wherobots api` CLI commands and
+are not tied to any individual.
 
 ## Scheduled / Recurring Jobs
 
