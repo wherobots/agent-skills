@@ -9,6 +9,11 @@ Agent skills for the [Wherobots](https://wherobots.com) spatial analytics platfo
 | `wherobots-usage` | Decision matrix for choosing between MCP, CLI, SDK, and Dashboard; auth setup; scheduling guidance |
 | `wherobots-explore` | MCP workflow patterns for data discovery, schema exploration, and spatial query generation |
 | `wherobots-develop` | CLI discovery patterns, non-obvious flags, job submission workflow, Python and TypeScript SDK usage |
+| `wherobots-ops` | Operational discipline: `wherobots` CLI structure, MCP usage sequence, runtimes, API keys, cost hygiene |
+| `open-data-catalog` | What's in `wherobots_open_data` (Overture, Foursquare, rasters): schemas, join keys, CRS, quirks, snapshots |
+| `spatial-sql-patterns` | WherobotsDB/Sedona Spatial SQL patterns and dialect gotchas: joins, KNN, CRS transforms, EXPLODE |
+| `wherobots-pipeline-designer` | Design/audit medallion (Bronze/Silver/Gold) geospatial pipelines over Iceberg/Havasu |
+| `area-weighted-interpolation` | Areal interpolation / spatial enrichment between non-matching polygon layers (extensive vs intensive) |
 
 ## Installation
 
