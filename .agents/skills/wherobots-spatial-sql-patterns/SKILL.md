@@ -1,5 +1,5 @@
 ---
-name: spatial-sql-patterns
+name: wherobots-spatial-sql-patterns
 description: Use when writing, reviewing, or debugging WherobotsDB/Sedona Spatial SQL — point-in-polygon, distance (ST_DWithin), spatial joins, KNN, aggregation, CRS transforms, flattening nested Overture structs (EXPLODE). Covers Sedona-vs-PostGIS dialect gotchas and Spark semantics.
 ---
 
@@ -42,6 +42,7 @@ gotchas actually hit while validating:
 
 ## Related skills
 
-- `open-data-catalog` — schemas, join keys, and quirks for `wherobots_open_data` (see its
+- `wherobots-open-data-catalog` — schemas, join keys, and quirks for `wherobots_open_data` (see its
   `references/catalog-map.md`). These templates target those tables.
-- `wherobots-ops` — MCP usage discipline and cost hygiene for executing queries.
+- `wherobots-explore` — the MCP tool sequence and exploration discipline for running these queries.
+- `wherobots-develop` — runtime sizing and cost hygiene once a pattern goes into a job.

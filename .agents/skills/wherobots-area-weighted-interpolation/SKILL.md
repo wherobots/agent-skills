@@ -1,5 +1,5 @@
 ---
-name: area-weighted-interpolation
+name: wherobots-area-weighted-interpolation
 description: Use when transferring a statistic between non-matching polygon layers on Wherobots — areal/area-weighted interpolation, spatial enrichment, apportionment (census population to zip codes), dasymetric weighting. Covers extensive-vs-intensive, dissolve-first, and CRS gotchas. Sedona, not PostGIS.
 ---
 
@@ -45,10 +45,10 @@ dasymetric refinement.
   (GeoParquet for files); project only the join key + variables you need. Geometry column named
   `geometry`, stored EPSG:4326. Never `inferSchema`. See `wherobots-pipeline-designer`.
 - Prefer Overture `divisions_division_area` for named target/source boundaries (with the
-  `is_land` filter for land-based quantities) over importing your own — see `open-data-catalog`.
+  `is_land` filter for land-based quantities) over importing your own — see `wherobots-open-data-catalog`.
 
 ## Sibling skills
 
-- `spatial-sql-patterns` — the join/CRS/aggregation primitives (Pattern 7 = `ST_Transform`).
-- `open-data-catalog` — divisions schema, `is_land`, population join key, buildings/land-use layers.
+- `wherobots-spatial-sql-patterns` — the join/CRS/aggregation primitives (Pattern 7 = `ST_Transform`).
+- `wherobots-open-data-catalog` — divisions schema, `is_land`, population join key, buildings/land-use layers.
 - `wherobots-pipeline-designer` — productionize enrichment as reprocessable Bronze→Silver→Gold.

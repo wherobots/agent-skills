@@ -1,5 +1,5 @@
 ---
-name: open-data-catalog
+name: wherobots-open-data-catalog
 description: Use when working with the Wherobots Open Data Catalog — which datasets exist and their schemas, join keys, CRS, and quirks. Covers wherobots_open_data (Overture, Foursquare, rasters), release snapshots, and category taxonomies so you pick the right table and columns without guessing.
 ---
 
@@ -8,9 +8,10 @@ description: Use when working with the Wherobots Open Data Catalog — which dat
 Meta-knowledge for `wherobots_open_data` (Overture Maps, Foursquare, Copernicus DEM, NOAA, and more).
 The catalog is **read-only**; write your outputs to `org_catalog`.
 
-**Read [`references/catalog-map.md`](references/catalog-map.md)** for the full walk: every database and
-table, Overture layer schemas, the current release snapshot, and a category-taxonomy sample. Verify
-against the live catalog with the MCP tools when precision matters — schemas change per Overture release.
+**Read [`references/catalog-map.md`](references/catalog-map.md)** for the table-selection map (which
+table answers which question), the join keys across divisions/segments/building parts, the
+two-taxonomy problem, and the release time-travel mechanism. It deliberately omits full column
+lists — `describe_table` those, since column sets change with every Overture release.
 
 ## Pick the right table
 
@@ -32,5 +33,5 @@ against the live catalog with the MCP tools when precision matters — schemas c
 
 ## Related skills
 
-- `spatial-sql-patterns` — validated query templates against these tables.
+- `wherobots-spatial-sql-patterns` — validated query templates against these tables.
 - `wherobots-explore` — the MCP tool sequence for discovering schemas live.

@@ -43,6 +43,14 @@ These flags work on all commands but are not shown in the `--help` summary:
 
 - `--output json` -- machine-parseable JSON output (default is human-readable table)
 - `--dry-run` -- prints the equivalent `curl` command without executing
+- `--tree` -- prints the whole command tree (`wherobots --tree`, `wherobots api --tree`). Faster than
+  guessing leaf names in the large, spec-generated `api` surface.
+- `-y, --yes` -- skip the confirmation prompt in CI/scripts
+
+**`--dry-run` is not an offline mode.** `WHEROBOTS_API_KEY` must still be exported: the CLI
+authenticates before rendering the curl, and `job-runs create` on a *local* script calls the API to
+resolve the managed-storage upload path before it can render anything. Point it at an `s3://` script
+or pass `--no-upload` if you want a dry run without that call.
 
 ## Job Submission Workflow
 
@@ -52,6 +60,27 @@ This multi-step process has non-obvious behavior:
 2. **Watch mode**: Use `--watch` on `create` to stream logs inline instead of running `logs` separately afterward.
 3. **Re-attach to logs**: `logs --follow` re-attaches to a running job's log stream after disconnecting.
 4. **Auth**: `WHEROBOTS_API_KEY` env var is required. `WHEROBOTS_API_URL` overrides the default endpoint.
+5. **Prefer `job-runs` over `api runs`**: `job-runs create` takes the script as a positional arg and
+   handles local-file auto-upload, `--watch`, and `--dep-pypi`/`--dep-file`. `api runs create-job-run`
+   is the raw POST — `s3://` scripts only, via `--runpython`. Use it when you need an API field the
+   wrapper does not expose.
+6. **Raw `api` bodies are camelCase, the flags are not**: `--runpython` sets `runPython`,
+   `--timeoutseconds` sets `timeoutSeconds`. Matters when you hand-write a body via `--json`, which
+   overrides the individual field flags. Object/array values must be JSON strings.
+7. **Size the runtime deliberately**: the `job-runs create` default is `tiny`, which is too small for
+   a real spatial join. Defaults for region (`aws-us-west-2`) and `--timeout` (3600s) are likewise
+   sized for smoke tests, not production runs.
+
+## Cost Hygiene
+
+Job runs and interactive SQL sessions both bill compute, so treat every execution as spend:
+
+- Prototype on a bounded sample (`LIMIT`, an AOI bbox prefilter) before running a stage full-table.
+- Size `--runtime` to the workload rather than scaling up after a failure.
+- **Two failed attempts = stop.** Re-read the schema and reconsider the table choice instead of
+  re-submitting a failing job; each retry costs a runtime start.
+- Review spend with the `usage` group of the `api` surface (`wherobots api usage --tree` for the
+  current leaf names).
 
 ## Python SDK (wherobots-python-dbapi)
 

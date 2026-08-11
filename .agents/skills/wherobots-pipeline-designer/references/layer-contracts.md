@@ -22,7 +22,16 @@ Spark) and this repo's ground truths.
 5. **Geometry column is always named `geometry`** (raster: `raster`).
 6. **All timestamps are UTC.** All vector data is EPSG:4326 unless a source proves otherwise.
 7. **Writable catalog is `org_catalog`** (placeholder for your org's managed catalog). `wherobots_open_data` is **read-only** — never write to it.
-8. **Idempotent writes.** Use `CREATE OR REPLACE TABLE …` (SQL) / `df.writeTo(TABLE).createOrReplace()` (DataFrame). Re-running a stage reproduces its output exactly.
+8. **Idempotent writes — and `INSERT INTO` is never one.** Re-running a stage must reproduce its
+   output, not append to it. Two shapes, chosen by how you reprocess:
+   - **Full refresh** (whole table rebuilt each run): `CREATE OR REPLACE TABLE …` (SQL) /
+     `df.writeTo(TABLE).createOrReplace()` (DataFrame).
+   - **Partitioned incremental** (a daily ingest that must not touch other days): overwrite only the
+     run's partition — `INSERT OVERWRITE … PARTITION (ingest_date = date('{{ ds }}'))` (SQL) or
+     `df.writeTo(TABLE).overwritePartitions()` with `spark.sql.sources.partitionOverwriteMode=dynamic`.
+
+   `CREATE TABLE IF NOT EXISTS` + plain `INSERT INTO` double-inserts the day on the second run. Use
+   `INSERT INTO` only behind a real dedupe key with a `MERGE INTO`, never as the default ingest shape.
 
 ---
 
@@ -41,7 +50,7 @@ Close to raw — no analytics or joins here.
 | **CRS tagging** | All vector data is EPSG:4326. For raster, Sedona auto-detects CRS from GeoTIFF metadata — do **not** blanket-apply `RS_SetSRID(raster, 4326)`. Record source CRS in a `crs` STRING column per raster table (e.g. `EPSG:32611`). |
 | **Deduplication** | If the source has a natural key, dedupe and document the key. |
 | **Provenance** | Every row traceable to its source; include an `ingested_at` TIMESTAMP. |
-| **Idempotency** | Re-running Bronze reproduces the table (`CREATE OR REPLACE` / `createOrReplace`). |
+| **Idempotency** | Re-running Bronze for a given day reproduces that day's rows rather than appending them — full refresh via `CREATE OR REPLACE`, or partition overwrite for a daily ingest (Principle 8). |
 
 ### What Bronze does NOT do
 No spatial joins/analytics · no AOI filtering (keep the full/broad source extent) · no normalization or scoring · no cross-source joins.
@@ -68,11 +77,18 @@ CREATE TABLE IF NOT EXISTS org_catalog.fleet.gps_pings_raw (
   geometry geometry, ingested_at timestamp, ingest_date date
 ) USING iceberg PARTITIONED BY (ingest_date);
 
-INSERT INTO org_catalog.fleet.gps_pings_raw
+-- INSERT OVERWRITE, not INSERT INTO: re-running the same {{ ds }} replaces that day's partition
+-- instead of double-inserting it, and leaves every other day untouched (Principle 8).
+INSERT OVERWRITE org_catalog.fleet.gps_pings_raw
+PARTITION (ingest_date = date('{{ ds }}'))
 SELECT vehicle_id, ts, lon, lat, ST_Point(lon, lat) AS geometry,
-       current_timestamp() AS ingested_at, date('{{ ds }}') AS ingest_date
+       current_timestamp() AS ingested_at
 FROM ...;                       -- explicit-schema read of s3://…/{{ ds }}/*.parquet (NO inferSchema)
 ```
+
+> `ingested_at` is `current_timestamp()`, so a re-run produces different values in that column —
+> idempotent in *row set*, not byte-identical. If you need byte-identical reprocessing, pass the run
+> timestamp in as a parameter instead of reading the clock.
 
 ---
 
@@ -201,10 +217,16 @@ Non-entity Gold (e.g. fleet-trips eval). The grain is a trip, built from time-or
 - **Sessionize** pings into trips (gap > N min, or key change) with a window function.
 - **Order before building the line** — `COLLECT_LIST` does not preserve order. Sort inside a CTE, then build the geometry.
 - **Pre-filter to ≥ 2 points** before `ST_MakeLine` (a single point makes no line).
+- **The sort key must be a unique scalar per `(grain, position)`.** Duplicate ingest or sub-second
+  resolution lost on load makes `ts` non-unique, and the struct sort then falls through to the next
+  field. Carry a `ping_id`/sequence number so the fallback is never the geometry.
 ```sql
 WITH ordered AS (                         -- CTE pre-filter for ST_MakeLine
   SELECT vehicle_id, trip_seq,
-         sort_array(collect_list(struct(ts, geometry))) AS pts,   -- struct sorts by ts (1st field)
+         -- structs sort field-by-field: ts first, then ping_id as a scalar tiebreak. The unique
+         -- scalar MUST come before `geometry` — on equal ts Spark would otherwise fall through to
+         -- comparing the spatial type, which has no total ordering (undefined result or a throw).
+         sort_array(collect_list(struct(ts, ping_id, geometry))) AS pts,
          min(ts) AS start_ts, max(ts) AS end_ts, count(*) AS n_pings
   FROM org_catalog.silver.trip_pings_matched
   GROUP BY vehicle_id, trip_seq
@@ -247,7 +269,7 @@ After a full run, these invariants must hold (adapt the scoring-specific ones to
 | Weights sum *(scoring Gold)* | `score_explanation` weights sum to 1.0 |
 | Tier distribution *(scoring Gold)* | ~5/15/30/30/20% split (quantile tiers), differing across industries |
 | Source columns documented *(scoring Gold)* | `score_explanation` names each source column |
-| Idempotent | Re-running any stage reproduces its table byte-for-row-count |
+| Idempotent | Re-running a stage leaves its row count unchanged (no appended duplicates) — verify by running the same partition twice and re-checking `COUNT(*)` |
 
 ---
 
@@ -256,4 +278,4 @@ This document generalizes a hazard-risk-scoring reference into a shape-independe
 entity risk-scoring detail is preserved as **Worked Gold shape A**; **shape B** (trip aggregation)
 was added from the fleet-trips eval so the contracts aren't overfit to one Gold. Function-signature
 notes were cross-checked against the Wherobots reference on 2026-07-10 but are Sedona-version- and
-MCP-availability-sensitive — validate on a bounded sample per the `spatial-sql-patterns` skill.
+MCP-availability-sensitive — validate on a bounded sample per the `wherobots-spatial-sql-patterns` skill.

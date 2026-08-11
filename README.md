@@ -8,12 +8,11 @@ Agent skills for the [Wherobots](https://wherobots.com) spatial analytics platfo
 |---|---|
 | `wherobots-usage` | Decision matrix for choosing between MCP, CLI, SDK, and Dashboard; auth setup; scheduling guidance |
 | `wherobots-explore` | MCP workflow patterns for data discovery, schema exploration, and spatial query generation |
-| `wherobots-develop` | CLI discovery patterns, non-obvious flags, job submission workflow, Python and TypeScript SDK usage |
-| `wherobots-ops` | Operational discipline: `wherobots` CLI structure, MCP usage sequence, runtimes, API keys, cost hygiene |
-| `open-data-catalog` | What's in `wherobots_open_data` (Overture, Foursquare, rasters): schemas, join keys, CRS, quirks, snapshots |
-| `spatial-sql-patterns` | WherobotsDB/Sedona Spatial SQL patterns and dialect gotchas: joins, KNN, CRS transforms, EXPLODE |
+| `wherobots-develop` | CLI discovery patterns, non-obvious flags, job submission workflow, cost hygiene, Python and TypeScript SDK usage |
+| `wherobots-open-data-catalog` | What's in `wherobots_open_data` (Overture, Foursquare, rasters): table selection, join keys, CRS, quirks, snapshots |
+| `wherobots-spatial-sql-patterns` | WherobotsDB/Sedona Spatial SQL patterns and dialect gotchas: joins, KNN, CRS transforms, EXPLODE |
 | `wherobots-pipeline-designer` | Design/audit medallion (Bronze/Silver/Gold) geospatial pipelines over Iceberg/Havasu |
-| `area-weighted-interpolation` | Areal interpolation / spatial enrichment between non-matching polygon layers (extensive vs intensive) |
+| `wherobots-area-weighted-interpolation` | Areal interpolation / spatial enrichment between non-matching polygon layers (extensive vs intensive) |
 
 ## Installation
 
@@ -23,6 +22,10 @@ Agent skills for the [Wherobots](https://wherobots.com) spatial analytics platfo
 npx skills add wherobots/agent-skills@wherobots-usage
 npx skills add wherobots/agent-skills@wherobots-explore
 npx skills add wherobots/agent-skills@wherobots-develop
+npx skills add wherobots/agent-skills@wherobots-open-data-catalog
+npx skills add wherobots/agent-skills@wherobots-spatial-sql-patterns
+npx skills add wherobots/agent-skills@wherobots-pipeline-designer
+npx skills add wherobots/agent-skills@wherobots-area-weighted-interpolation
 ```
 
 ### Via Wherobots VS Code Extension
@@ -43,6 +46,18 @@ Skills do NOT contain:
 - Tool parameter documentation (already in MCP/CLI `--help`)
 - API reference material (discoverable at runtime)
 - Tutorials or step-by-step guides
+
+### The `references/` exception
+
+A skill MAY carry a `references/*.md` file, loaded on demand rather than up front, when the material
+is **validated** and **not runtime-discoverable**: query templates proven against live compute (with
+the date and result recorded), layer contracts, dataset behaviors that produce plausible-but-wrong
+answers. The bar is the same test above, plus one more: **transcribing `--help` or `describe_table`
+output into a reference file is not allowed** — it bloats context and goes stale silently. Prefer
+"here is the join key and what surprises you" over "here is every column."
+
+Reference files record the date they were validated and what they were validated against, so a
+reader can tell stale content from current.
 
 ## Benchmarks
 

@@ -146,6 +146,7 @@ FROM (
   WHERE bbox.xmin > -122.42 AND bbox.xmax < -122.40
     AND bbox.ymin > 37.77 AND bbox.ymax < 37.79
     AND categories.primary = 'coffee_shop' AND names.primary IS NOT NULL
+  ORDER BY names.primary                    -- deterministic: LIMIT without ORDER BY varies run-to-run
   LIMIT 5                                   -- keep the query side tiny; KNN joins are expensive
 ) q
 JOIN (
@@ -161,6 +162,14 @@ ON ST_KNN(q.geom, o.geom, 3, true);          -- R=queries, S=objects, k=3, use_s
 **Gotchas:**
 - `ST_KNN` is a **join predicate** (`ON ST_KNN(...)`), not a scalar function. First arg is the
   **query** side (R), second is the **object** side (S).
+- **The 4-arg form applies no distance bound.** `ST_KNN(q, o, k, use_sphere)` searches the *whole*
+  object set for every query row — safe here only because the query side is capped at 5 rows. Add the
+  optional 5th `radius` argument (`ST_KNN(q, o, k, true, 25000)` — meters when `use_sphere = true`)
+  before running this against a query set of any real size, or the join scans everything per row.
+- **`use_sphere` must be `TRUE` on EPSG:4326 inputs**, otherwise `radius` is read as **degrees** —
+  silently wrong in both directions (`25000` degrees matches the globe; `0.0002` matches nothing).
+- **Non-point geometries are reduced to their centroid.** Fine for point↔point. Wrong for snapping a
+  point to a line or polygon — use point-to-line distance (`ST_DistanceSphere(pt, line)`) instead.
 - For a single reference location, you don't need `ST_KNN` — `ORDER BY ST_DistanceSphere(...) LIMIT k`
   is simpler and cheaper. Reserve `ST_KNN` for per-row nearest across two datasets.
 - Ties: only returned if `spark.sedona.join.knn.includeTieBreakers=true`. `ST_AKNN` is the
@@ -259,5 +268,5 @@ LIMIT 15;
 ### Coverage note
 All 8 canonical patterns validated 2026-07-09 against Overture release `2026-06-17.0`
 (current `main`). Re-validate after an Overture release bump if a schema-dependent field
-(e.g. `taxonomy`, division `subtype` set) changes. See `open-data-catalog/references/catalog-map.md`
+(e.g. `taxonomy`, division `subtype` set) changes. See `wherobots-open-data-catalog/references/catalog-map.md`
 for schemas and the release-snapshot history.
