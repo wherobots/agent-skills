@@ -17,7 +17,7 @@ jobs:
           node-version: '20'
 
       - name: Install validation tools
-        run: npm install -g ajv-cli markdownlint-cli
+        run: npm install -g ajv-cli ajv-formats markdownlint-cli
 
       - name: Validate SKILL.md frontmatter
         run: |
@@ -79,3 +79,68 @@ jobs:
           "
           done
           echo "All skills validated successfully."
+
+      - name: Validate Cursor plugin manifest
+        run: |
+          set -euo pipefail
+
+          # Schema is vendored verbatim from cursor/plugins so CI enforces the same
+          # rules the marketplace does. Refresh it from:
+          # https://github.com/cursor/plugins/blob/main/schemas/plugin.schema.json
+          ajv validate -c ajv-formats \
+            -s schemas/cursor-plugin.schema.json \
+            -d .cursor-plugin/plugin.json
+
+          # Cursor rejects a plugin whose manifest points at files that do not
+          # exist, so every declared path is checked here rather than at review time.
+          python3 - <<'PY'
+          import json, os, sys
+
+          manifest = json.load(open(".cursor-plugin/plugin.json"))
+          errors = []
+
+          def repo_path(declared):
+              """Manifest paths are relative to the plugin root, optionally './'-prefixed."""
+              return declared[2:] if declared.startswith("./") else declared
+
+          for field in ("skills", "mcpServers", "logo"):
+              value = manifest.get(field)
+              if value is None:
+                  continue
+              if not os.path.exists(repo_path(value)):
+                  errors.append(f"{field}: declared path '{value}' does not exist")
+
+          skills_dir = repo_path(manifest["skills"])
+          skills = []
+          if os.path.isdir(skills_dir):
+              skills = sorted(
+                  d for d in os.listdir(skills_dir)
+                  if os.path.isdir(os.path.join(skills_dir, d))
+              )
+              if not skills:
+                  errors.append(f"skills: no skill directories found under '{skills_dir}'")
+              for skill in skills:
+                  if not os.path.isfile(os.path.join(skills_dir, skill, "SKILL.md")):
+                      errors.append(f"skills: '{skill}' has no SKILL.md")
+
+          servers = {}
+          mcp_path = repo_path(manifest["mcpServers"])
+          if os.path.isfile(mcp_path):
+              servers = json.load(open(mcp_path)).get("mcpServers")
+              if not isinstance(servers, dict) or not servers:
+                  errors.append("mcp.json: top-level 'mcpServers' object is required by Cursor")
+                  servers = {}
+              # Cursor rejects the VS Code-style "type" field on a remote server entry.
+              # See docs.wherobots.com/develop/agentic-tools/cursor.
+              for name, server in servers.items():
+                  if "type" in server:
+                      errors.append(f"mcp.json: server '{name}' must not set 'type'")
+                  if not server.get("url"):
+                      errors.append(f"mcp.json: server '{name}' is missing 'url'")
+
+          if errors:
+              print("\n".join(f"ERROR: {e}" for e in errors))
+              sys.exit(1)
+
+          print(f"Cursor plugin OK: {len(skills)} skills, {len(servers)} MCP server(s)")
+          PY
