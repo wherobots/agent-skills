@@ -24,6 +24,32 @@ npx skills add wherobots/agent-skills@wherobots-develop
 
 Skills are bundled in the [Wherobots VS Code extension](https://marketplace.visualstudio.com/items?itemName=Wherobots.wherobotsjobsubmit) and available automatically in Copilot Chat and Claude Code when the extension is installed.
 
+### Via the Cursor marketplace
+
+This repository is also a Cursor plugin. Installing it registers the Wherobots MCP server and all three skills in one step, with no manual `.cursor/mcp.json` editing. Search for **Wherobots** in [Cursor's marketplace](https://cursor.com/marketplace).
+
+To install it before the listing is live:
+
+```bash
+git clone https://github.com/wherobots/agent-skills ~/.cursor/plugins/local/wherobots
+```
+
+Reload Cursor, then check **Cursor Settings > Tools & MCPs** for `wherobots-mcp-server`. The first tool call opens a browser to sign in to Wherobots and pick an organization. Manual setup, including the API key alternative to OAuth, is documented at [Set Up Wherobots in Cursor](https://docs.wherobots.com/develop/agentic-tools/cursor).
+
+## Cursor plugin
+
+The repository root is the plugin, so Cursor ships the same `SKILL.md` files that CI validates here. There is no vendored copy to keep in sync.
+
+| Path | Purpose |
+|---|---|
+| `.cursor-plugin/plugin.json` | Plugin manifest, validated in CI against Cursor's published schema |
+| `mcp.json` | Registers `wherobots-mcp-server` at `https://api.cloud.wherobots.com/mcp/` |
+| `assets/logo.svg` | Marketplace listing icon |
+
+Two constraints shape this layout. Cursor manifest paths cannot use parent traversal, so a plugin in a subdirectory could not reach `.agents/skills/`, which is why the plugin sits at the repo root. And `skills` is set explicitly to `.agents/skills` rather than Cursor's default `skills/` directory, because the [VS Code extension](https://github.com/wherobots/vs-code-extension) resolves skills from that path.
+
+Bump `version` in `plugin.json` for every marketplace submission. Cursor manually reviews each release.
+
 ## Design Philosophy
 
 Every line in a skill must pass this test: **"Does this make the agent measurably more effective, or can the agent already discover this from `--help` / MCP tool descriptions?"**

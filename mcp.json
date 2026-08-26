@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "wherobots-mcp-server": {
+      "url": "https://api.cloud.wherobots.com/mcp/"
+    }
+  }
+}
