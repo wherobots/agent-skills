@@ -18,10 +18,12 @@ Before implementing spatial job logic, use the MCP server to understand what dat
 
 **Job files**: Store job scripts in **Wherobots Managed Storage** (built-in S3, us-west-2) or in your own S3 bucket via a **Storage Integration**. Both are referenceable as `s3://` URIs in `WherobotsRunOperator` and `wherobots job-runs create`.
 
-**Proprietary data**: Three ways to bring in your own data:
+**Proprietary data**: Five ways to bring in your own data:
 
 - **S3 Storage Integration** — connect your own S3 bucket; Wherobots can register it as a managed catalog so tables appear in Sedona SQL alongside open data
-- **Databricks Unity Catalog** — read Delta Lake and Apache Iceberg tables directly from a Databricks workspace (requires a Personal Access Token; Professional/Enterprise only; writing back to Delta is not currently supported)
+- **AWS Glue Data Catalog** — read and write Iceberg tables in a Glue catalog. Set up through the Data Hub wizard, which provisions a **Cloud Connection** (an IAM role with an external ID that Wherobots assumes) via CloudFormation — no manual IAM policy or Spark config. Choose **read-only** or **read-write** at connection time. Requires an Admin account in a Professional, Innovation, or Enterprise Organization. Known limits: no `CREATE TABLE AS SELECT`, no views, no table renaming
+- **Amazon S3 Tables Catalog** — connect an S3 Tables bucket, also via a Cloud Connection
+- **Databricks Unity Catalog** — read Delta Lake and Apache Iceberg tables directly from a Databricks workspace (Delta uses a Personal Access Token, Iceberg uses OAuth client credentials; Professional/Enterprise only; writing back to Delta is not currently supported). Databricks foreign catalogs do not use a Wherobots Cloud Connection
 - **Havasu tables** — Wherobots' own Iceberg-based spatial table format; store in Managed Storage or your S3 integration and query like any catalog table
 
 Use `wherobots api` CLI commands to discover and configure storage integrations and catalog connections.
