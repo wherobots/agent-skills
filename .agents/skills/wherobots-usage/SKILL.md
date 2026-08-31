@@ -14,6 +14,11 @@ description: Use whenever working on any Wherobots task — provides the interfa
 | Programmatic access in notebooks, application code, or pipelines               | **Python SDK** (`wherobots-python-dbapi`) or **TypeScript SDK** (`wherobots-sql-driver`) | DB-API 2.0 / Arrow-based interfaces for integration          |
 | Visual exploration, billing, workspace management                              | **Wherobots Dashboard** (cloud.wherobots.com)                                            | GUI-only features like team management and billing           |
 
+Every one of these interfaces bills compute when it executes SQL or starts a job run — an MCP query
+is not free just because it is read-only. Pick the interface that lets you bound the work: MCP for
+`LIMIT`ed exploration, a sized job run for anything full-table. See `wherobots-develop` for runtime
+sizing and cost hygiene.
+
 ## Authentication
 
 The auth method depends on the client:

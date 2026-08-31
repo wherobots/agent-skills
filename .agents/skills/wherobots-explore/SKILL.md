@@ -16,6 +16,17 @@ The MCP server enforces a specific ordering. Follow this sequence:
 
 Skipping steps (e.g., executing before exploring the schema) will produce errors or poor results.
 
+## Exploration Discipline
+
+- **Explore before generating.** `describe_table_tool` the target before writing SQL against it.
+  Never query assumed columns -- a query over an invented column name costs a full round trip.
+- **Validate cheap before expensive.** `LIMIT` samples and `COUNT(*)` sanity checks before a
+  full-table spatial join; prefilter to an AOI first. Execution bills compute even read-only.
+- **Two failed attempts = stop.** Re-read the schema and reconsider the table choice rather than
+  looping on a failing query. A clean query returning 0 rows is a failure to investigate, not
+  an answer -- usually the wrong table, filter value, or geometry column.
+- **Anything destined for production goes to a repo file**, not left in the chat transcript.
+
 ## Constraints
 
 - **Read-only**: MCP enforces SELECT-only queries. Do not attempt DDL (CREATE/DROP) or DML (INSERT/UPDATE/DELETE).
