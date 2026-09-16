@@ -15,6 +15,9 @@ Each task file contains:
 - **Success criteria**: How to verify the task was completed correctly
 - **Allowed tools**: Which tools/CLIs the agent may use
 - **Skill under test**: Which skill(s) to load for the A condition (omit for B condition)
+- **Failure mode being measured** (optional): The specific wrong answer the B condition is expected to
+  produce. Worth stating when the failure is silent -- a query that runs cleanly and returns a
+  plausible-but-wrong number is the case where a pass/fail criterion is easiest to grade wrongly.
 
 ## Running Benchmarks
 
