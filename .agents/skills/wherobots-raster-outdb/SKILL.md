@@ -1,6 +1,6 @@
 ---
 name: wherobots-raster-outdb
-description: Use when processing rasters in WherobotsDB: zonal statistics, map algebra, tiling, NDVI and band math over COGs. Covers which functions preserve out-db (lazy) references and which silently materialize pixels, how to check, and the many-zones pattern.
+description: Use when processing rasters in WherobotsDB for zonal statistics, map algebra, tiling, NDVI or band math over COGs. Covers which functions preserve out-db (lazy) references and which silently materialize pixels, how to check, and the many-zones pattern.
 ---
 
 # Out-DB Rasters: when pixels actually get read
