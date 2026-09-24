@@ -13,6 +13,7 @@ Agent skills for the [Wherobots](https://wherobots.com) spatial analytics platfo
 | `wherobots-spatial-sql-patterns` | WherobotsDB/Sedona Spatial SQL patterns and dialect gotchas: joins, KNN, CRS transforms, EXPLODE |
 | `wherobots-pipeline-designer` | Design/audit medallion (Bronze/Silver/Gold) geospatial pipelines over Iceberg/Havasu |
 | `wherobots-area-weighted-interpolation` | Areal interpolation / spatial enrichment between non-matching polygon layers (extensive vs intensive) |
+| `wherobots-raster-outdb` | Out-DB raster execution model: which functions keep pixels lazy vs silently materialize them, how to check, zonal stats over many zones |
 
 ## Installation
 
@@ -26,6 +27,7 @@ npx skills add wherobots/agent-skills@wherobots-open-data-catalog
 npx skills add wherobots/agent-skills@wherobots-spatial-sql-patterns
 npx skills add wherobots/agent-skills@wherobots-pipeline-designer
 npx skills add wherobots/agent-skills@wherobots-area-weighted-interpolation
+npx skills add wherobots/agent-skills@wherobots-raster-outdb
 ```
 
 ### Via Wherobots VS Code Extension
