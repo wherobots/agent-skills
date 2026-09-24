@@ -24,10 +24,16 @@ SELECT CAST(rast AS STRING) FROM my_rasters LIMIT 1
 |---|---|
 | `LazyLoadOutDbGridCoverage2D[not loaded]` | out-db, nothing read yet |
 | `OutDbGridCoverage2D["outDbCoverage", ...]` | out-db, still a reference |
-| `GridCoverage2D["genericCoverage", ...]` | **materialized** — pixels are in memory |
+| `GridCoverage2D["outDbCoverage", ...]` | in-db class, out-db provenance (e.g. `RS_Union`) |
+| `GridCoverage2D["genericCoverage", ...]` | **materialized** — pixels computed |
 
-Do this after every step of a raster pipeline you care about the cost of. It is the only
-cheap way to find an accidental materialization.
+**Read the CLASS, not the coverage name, and mind the case.** `OutDbGridCoverage2D` is the
+class; `"outDbCoverage"` is only a name and appears on in-db results too. A substring test for
+`OutDb` misreads `"outDbCoverage"` because of the lowercase first letter.
+
+**This check is reliable for a STORED column, not for an inline expression.** Casting an
+expression to a string forces it to evaluate, so the class you see may be an artifact of the
+probe. Use it on a view or table you built; use timing to judge an expression mid-pipeline.
 
 ## Verified behaviour
 
@@ -61,23 +67,38 @@ WHERE ST_Intersects(i.footprint, z.geom)
 -- Correct output, no error, orders of magnitude more pixel reads.
 ```
 
-**Measured difference:** zonal mean over 1,087 zones against a full Sentinel-2 scene took
-**5 seconds** out-db. The tile-and-algebra route cost **~39 s per scene** for the explode and
-algebra alone, before any zonal stats — and it reads 262,144 pixels per 512x512 tile to sample
-zones of roughly 60 pixels each.
+**Measured difference, same workload, 1,087 zones against one Sentinel-2 scene:**
 
-Work out your ratio before choosing: `zone area / raster area`. If zones cover a small
-percentage of the raster, tiling first is throwing away the entire advantage of out-db.
+| approach | time |
+|---|---|
+| zonal-reduce the raw bands out-db, then compute the index | **11.6 s** |
+| tile, map-algebra per pixel, then zonal-reduce | **56.6 s** |
+
+**About 5x, not the orders of magnitude a pixel-count argument suggests.** Zone area over
+raster area says these buffers touch under 1% of the scene, which looks like a ~100x argument;
+the measured gap is 4.9x because per-zone overhead dominates once the read is windowed.
+**Measure your own ratio rather than deriving it** — an estimate from pixel counts was wrong
+here by more than two orders of magnitude.
+
+5x is a scheduling difference, not an architectural one. It is rarely a good reason on its own
+to change what a number means (see below).
 
 ## When you genuinely need per-pixel band math
 
-Cross-band arithmetic (NDVI, indices, masks) needs co-registered bands, and co-registration
-materializes. There is no free lunch. Decide deliberately:
+`RS_MapAlgebra` takes **one raster** and indexes its **bands** (`rast[0]`, `rast[1]`). It does
+not take an array of rasters: `RS_MapAlgebra(ARRAY(r1, r2), ...)` fails with
+`DATATYPE_MISMATCH` regardless of whether the inputs are out-db or the same shape. Combine
+bands first with `RS_Union`, which produces a real multi-band raster.
 
-- **Reduce over the raw bands, then compute the index** from the reduced values: fully out-db,
-  very cheap. But `mean(NDVI) != NDVI(mean)` — a ratio of means is not a mean of ratios. **This
-  changes what your number means.** Do not adopt it silently as an optimization; it is a
-  specification decision.
+Cross-band arithmetic then needs those co-registered bands, and computing new pixel values
+materializes by definition. There is no free lunch. Decide deliberately:
+
+- **Reduce over the raw bands, then compute the index** from the reduced values: fully out-db
+  and roughly 5x faster. But `mean(NDVI) != NDVI(mean)` — a ratio of means is not a mean of
+  ratios. Measured on one real scene and 1,087 zones, the two routes returned **0.4377** and
+  **0.4647**. **This changes what your number means.** Do not adopt it silently as an
+  optimization; it is a specification decision, and at 5x the speed is seldom the deciding
+  argument.
 - **Per-pixel index, then reduce**: materializes, and costs accordingly. Budget for it, restrict
   the item set spatially first, and run it as a batch job rather than interactively.
 

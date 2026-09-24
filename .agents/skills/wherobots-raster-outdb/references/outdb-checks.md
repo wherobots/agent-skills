@@ -8,8 +8,18 @@ Copy-paste checks. All are cheap; run them before committing to a long raster jo
 SELECT CAST(rast AS STRING) AS kind FROM my_view LIMIT 1
 ```
 
-`LazyLoadOutDbGridCoverage2D` / `OutDbGridCoverage2D` = out-db.
-`GridCoverage2D["genericCoverage"` = materialized.
+Read the CLASS, not the coverage name:
+
+| class | name | meaning |
+|---|---|---|
+| `LazyLoadOutDbGridCoverage2D` | `[not loaded]` | out-db, unread |
+| `OutDbGridCoverage2D` | `"outDbCoverage"` | out-db |
+| `GridCoverage2D` | `"outDbCoverage"` | in-db class, out-db provenance (`RS_Union`) |
+| `GridCoverage2D` | `"genericCoverage"` | materialized |
+
+A substring test for `OutDb` misreads `"outDbCoverage"` (lowercase first letter), and the name
+alone does not tell you the class. **Only meaningful on a stored column** — casting an inline
+expression to a string forces it to evaluate, so the class you see may be the probe's doing.
 
 ## 2. Which step broke it?
 
@@ -35,8 +45,11 @@ SELECT
 FROM zones
 ```
 
-A low percentage means tiling before reducing is wasted work: go straight to
-`RS_ZonalStats` on the out-db raster.
+A low percentage suggests tiling before reducing is wasted work, but **do not convert that
+ratio into a speedup estimate**. Measured on one scene and 1,087 zones covering under 1% of it,
+the actual gap between reducing raw bands out-db and tiling with per-pixel algebra was **4.9x**
+(11.6 s vs 56.6 s), not the ~100x the area ratio implies. Per-zone overhead dominates once the
+read is windowed. Time both on a bounded sample.
 
 ## 4. Does this map-algebra script actually run?
 
@@ -61,6 +74,26 @@ On a known nodata pixel, an unguarded expression returns a real-looking number:
 | `red = rast[0]; out[0] = con(red == 0, NULL, red * 0.0001 + (-0.1));` | `NULL` — suppressed |
 
 Only the second is excluded by `RS_ZonalStats(..., excludeNoData => TRUE)`.
+
+## 6. Which is faster, on YOUR data
+
+```sql
+-- A: reduce raw bands out-db, then compute the index  (NDVI(mean))
+SELECT AVG((nn-rr)/NULLIF(nn+rr,0)) FROM (
+  SELECT RS_ZonalStats(red_rast, z.geom, 1,'mean',TRUE)*scale+offset rr,
+         RS_ZonalStats(nir_rast, z.geom, 1,'mean',TRUE)*scale+offset nn
+  FROM items, zones z)
+
+-- B: per-pixel index, tiled, then reduce  (mean(NDVI))
+--    RS_Union -> RS_StackTileExplode -> RS_MapAlgebra -> RS_ZonalStats
+```
+
+Time both. They return **different numbers**, so the choice is a specification decision;
+the timing only tells you what it costs.
+
+Put the raster expression OUTSIDE the row-wise join. `FROM items i, zones z` with
+`RS_MapAlgebra(...)` in the SELECT recomputes the whole scene once PER ZONE. That mistake made
+a one-item query fail to finish in 77 minutes.
 
 ## Not yet verified
 
