@@ -225,9 +225,9 @@ downloaded, mixed with another product, or re-tiled:
 
 ```text
 <product>_<variant>_<crs>_<cell>_<ulx>_<uly>.tif
-slope_halo_e26910_10m_x0730680_y4069320.tif          projected CRS: UL corner in CRS units
+slope_halo_e26910_10m_x00730680_y04069320.tif        projected CRS: UL corner in CRS units, 8 digits, m = negative
 slope_halo_e4269_1as3_w122p0400_n37p9500.tif         geographic CRS: UL corner, p = decimal point
-ndvi_s2b10sgf20250619_e32610_10m_x0699960_y4100040.tif
+ndvi_s2b10sgf20250619_e32610_10m_x00699960_y04100040.tif
 ```
 
 Rules:
@@ -258,17 +258,16 @@ builds the projected and geographic forms and is what was validated):
 
 ```sql
 CONCAT('slope_halo_e', RS_SRID(r), '_10m',
-       '_x', LPAD(CAST(CAST(RS_UpperLeftX(r) AS BIGINT) AS STRING), 7, '0'),
-       '_y', LPAD(CAST(CAST(RS_UpperLeftY(r) AS BIGINT) AS STRING), 7, '0')) AS path
+       '_x', IF(RS_UpperLeftX(r) < 0, 'm', ''), LPAD(CAST(CAST(ABS(RS_UpperLeftX(r)) AS BIGINT) AS STRING), 8, '0'),
+       '_y', IF(RS_UpperLeftY(r) < 0, 'm', ''), LPAD(CAST(CAST(ABS(RS_UpperLeftY(r)) AS BIGINT) AS STRING), 8, '0')) AS path
 ```
 
-Limits of the projected form: `LPAD(..., 7)` fits UTM eastings and northern-hemisphere
-northings; Spark's `LPAD` *truncates* longer values, so southern UTM northings (8 digits),
-EPSG:3857 and negative coordinates (Albers west of the central meridian) need a wider field and
-a sign token. *Untested*.
+Spark's `LPAD` *truncates* values longer than the width, so the field is 8 digits (EPSG:3857
+reaches 20,037,508; southern UTM northings reach 10,000,000) and negative corners get an `m`.
 
-Validated on the cluster (2026-10-05, `tiny` runtime): `tile_name_expr` gives `slope_halo_e32610_30m_x0772290_y4057620`
-for a UTM tile, `slope_halo_e4269_30m_w121p9800_n37p9600` and `slope_halo_e4326_30m_e018p0000_s33p9000`
+Validated with `RS_MakeEmptyRaster` corners on Wherobots Cloud (2026-10-07): `slope_halo_e32610_30m_x00500000_y04100000`
+(UTM north), `slope_halo_e32710_30m_x00500000_y09990000` (UTM south), `slope_halo_e3857_30m_xm20037508_y19000000`
+(Web Mercator west edge), `slope_halo_e5070_30m_xm02356000_y03100000` (CONUS Albers); 2026-10-05 and 2026-10-07: `slope_halo_e4269_30m_w121p9800_n37p9600` and `slope_halo_e4326_30m_e018p0000_s33p9000`
 for geographic corners in all four hemisphere combinations, and
 `slope_halo_e4326_30m_w120p0001_n36p6446` for a real Copernicus GLO-30 tile from
 `wherobots_open_data.copernicus_dem.glo_30m` (UL corner -120.000139, 36.644583).

@@ -54,8 +54,8 @@ out = (tiles.selectExpr("path", "x", "y", empty_template_sql("rast"), "rast", "n
 |--------|----------------------|--------|
 | Catalog table as file index (`name IN (...)`), re-tiled to 2048 px | catalog tiles as stored (256 px); bucket glob; catalog `RS_Intersects` filter | lookup 2.0-4.3 s vs 26-27 s glob vs 26-29 s `RS_Intersects` (scans the global table); compute 25 s vs **164 s** on the 256-px catalog tiles (6.4x) vs 23 s glob; identical output |
 | Glob when there is no catalog | explicit path list | a list fails on missing (all-ocean) cells; glob skips them |
-| Tiles of 2048 px | 1024 px | 15.3 vs 6.8 M cells/s (2.3x); earlier 1024 vs 256 px: 6.8 s vs 16.3 s |
-| Empty template (`empty_template_sql`) | `RS_AsInDB(tile)` | 46 s vs 79 s at 1024 px, 56 s vs 92 s at 2048 px; identical output |
+| Tiles of 2048 px | 1024 px | about 2.3x the throughput on the same files; earlier 1024 vs 256 px: 6.8 s vs 16.3 s |
+| Empty template (`empty_template_sql`) | `RS_AsInDB(tile)` | about 40 % less wall time at both 1024 and 2048 px (paired runs on the same files); identical output |
 | Neighbour-file halo (`*_nb_udf`) | per-file halo | per-file: 82.6 deg fake cliffs (0-fill) or a NaN cross every 1 degree; neighbour: 0.0 |
 | NaN fill outside the file | file nodata | Copernicus has no nodata tag: 0 m cliffs |
 | Per-row cell sizes (geographic) | per-tile centre | tiled = single pass exactly (0.0000 deg) |
@@ -65,7 +65,8 @@ out = (tiles.selectExpr("path", "x", "y", empty_template_sql("rast"), "rast", "n
 | `RS_AsCOG` + distributed writer | | encoding costs less than one extra Python pass; not the bottleneck |
 
 Best combination (2048 px + empty template) against the previous default (1024 px + `RS_AsInDB`):
-**3.9x** the throughput (15.3 vs 4.0 M cells/s on 32 cores). Untested: tiles larger than 2048 px
+roughly **4x** the throughput on 32 cores (per-run cell counts differed between the comparisons, so
+treat the ratios as indicative and measure your own). Untested: tiles larger than 2048 px
 (a 3600-px file in one tile), the empty template with multi-band outputs (with_bands replaced the
 1-band template with 3 bands for `terrain_nb_udf` under `RS_AsInDB`; not yet under the empty template).
 

@@ -11,7 +11,7 @@ focal operations seam-free, and which decisions belong to the analyst.
 
 > Validated on Wherobots Cloud (Spark 4.1.3, `small` runtime) job runs **2026-09-26 to
 > 2026-10-05**; reference code unit tests last run 2026-10-07 against Sentinel-2 L2A, Copernicus GLO-30, USGS 3DEP 1/3 arc-second and NAIP
-> COGs. Numbers are from those runs or from local unit tests of the reference code; anything not
+> COGs; spot checks re-run 2026-10-07. Numbers are from those runs or from local unit tests of the reference code; anything not
 > measured is marked *untested*. Re-check on runtime upgrades.
 
 **Read the reference file the task needs, in full:**
@@ -19,6 +19,7 @@ focal operations seam-free, and which decisions belong to the analyst.
 | File | When |
 |------|------|
 | [`references/decisions_resampling.md`](references/decisions_resampling.md) | before any pipeline with mixed resolutions, small polygons, geographic DEMs, unknown units: the questions to ask the analyst and what to recommend |
+| [`references/loading_units_patterns.md`](references/loading_units_patterns.md) | entry points and formats, rescale defaults, DN vs reflectance, the core tile/zonal/terrain/export patterns, the out-db cast check, `RS_MapAlgebra` traps |
 | [`references/tile_vs_zonal.md`](references/tile_vs_zonal.md) | choosing between full-tile work and per-polygon/per-point work; measured costs |
 | [`references/edge_effects.md`](references/edge_effects.md) | any focal/neighbourhood operation or scene-wide statistic on tiles: halo widths, two-pass, verification |
 | [`references/recipes_terrain.md`](references/recipes_terrain.md) | slope, aspect, hillshade, TRI, TPI, landforms, roughness, curvature, generic focal |
@@ -79,7 +80,7 @@ df.selectExpr("RS_AsInDB(red) AS red_indb", "nir").select(ndvi_raster_udf(F.col(
   template, not `RS_AsInDB(tile)`: `RS_MakeEmptyRaster(1, 'F', RS_Width(r), RS_Height(r),
   RS_UpperLeftX(r), RS_UpperLeftY(r), RS_ScaleX(r), RS_ScaleY(r), RS_SkewX(r), RS_SkewY(r),
   RS_SRID(r))` reads no pixels (`empty_template_sql` in `code_sedona_udfs.md`). *Measured*
-  2026-10-05: 46 s vs 79 s on 313 M cells, identical output. `RS_AsInDB` only when the UDF
+  2026-10-05: about 40 % less wall time in paired runs, identical output. `RS_AsInDB` only when the UDF
   actually needs those pixels from the JVM (many small rows, see 3).
 - `as_numpy()` (bands, H, W); `as_numpy_masked()` turns per-band nodata into NaN;
   `bands_meta[i].nodata`, `affine_trans`, `crs_wkt`, `width`, `height`, `path`,
@@ -141,78 +142,25 @@ Source split over many files (Copernicus 1-degree COGs, 3DEP tiles, quads)?
    Per-file halo on Copernicus (no nodata tag): 82.6 deg fake cliffs on 1-degree lines. Neighbour halo: 0.
 ```
 
-## 4. Loading and formats
+## 4. Loading, units, core patterns
 
-| Entry point | Result | Formats | Rescale default |
-|-------------|--------|---------|-----------------|
-| `sedona.read.format("raster").load("s3a://bucket/prefix/")` | one out-db tile per internal block (`tileWidth`/`tileHeight`), auto-repartitioned | GeoTIFF/COG, ArcGrid `.asc` | no (`autoRescale`) |
-| `RS_FromPath(path)` | one lazy out-db raster; https S3 URLs rewritten to s3a | GeoTIFF/COG, `.asc` | **yes** (`'raster.reader.auto-rescale=false'`) |
-| `format("stac")` | STAC items + `assets.<band>.rast` out-db | COG hrefs | yes |
-| `RS_FromGeoTiff(content)` via `binaryFile` | in-db, whole file | GeoTIFF | yes |
-| `RS_FromNetCDF(content, var)` | in-db | NetCDF | - |
+**Read [`references/loading_units_patterns.md`](references/loading_units_patterns.md)** before
+writing the first query: which entry point applies auto-rescale, formats the reader cannot open
+(no JPEG2000, HDF, Zarr), the DN-vs-reflectance check, and the tile/zonal/terrain/export
+patterns. The traps it covers:
 
-GeoTools/imageio-ext underneath, not GDAL: **no JPEG2000, HDF, Zarr, GeoPackage rasters**;
-convert with `rio cogeo create --blocksize 1024` or `gdal_translate -of COG`. The raster
-reader is DataFrame-only (``FROM raster.`path` `` fails) and needs `s3a://`, not https.
-Check `RS_MetaData` first: `tileWidth`/`tileHeight` (tile at that size), `srid` (0 means an
-unrecognised CRS such as NLCD Albers: polygon transforms silently assume WGS84), block shape
-(striped files 10812 x 1 work but tile explode is 14x slower).
+- `RS_FromPath` rescales by default, the raster reader does not; the reader is DataFrame-only
+  and needs `s3a://`.
+- `RS_MetaData` first: block size (tile at it), `srid` 0 (unrecognised CRS: transforms silently
+  assume WGS84), striped blocks.
+- Units follow the **file's** tags, not STAC: `wherobots_open_data.sentinel2` files are DN /
+  10000 with **no** offset; a wrong offset pushed every field NDVI to 1.0 with no error.
+- Zonal: sum and count per (polygon, tile) pair, divide once per polygon.
+- Out-db check: `CAST(rast AS STRING)` starts with `LazyLoadOutDb`/`OutDb` (reference) or
+  `GridCoverage2D["genericCoverage"` (materialized). `RS_MapAlgebra` scripts are Jiffle, and
+  `COUNT(*)` does not evaluate them.
 
-## 5. Units: DN vs reflectance
-
-Depends on the **file's** scale/offset tags, not on STAC metadata or the collection name.
-`wherobots_open_data.sentinel2.l2a_source_items` -> `sentinel-cogs` files: no tags, DN in SQL
-and in Python, DN = reflectance x 10000 with **no** offset (lush field red DN ~550, NIR ~5800).
-Use `DN / 10000`, DN 0 = nodata. Earth Search Collection-1: SQL returns rescaled doubles, a UDF
-on out-db still sees DN. **Verify on a known target** (vegetation red 0.03-0.08, NIR 0.3-0.5);
-a wrong offset pushed every field NDVI to 1.0 with no error. See `recipes_indexes.md`.
-
-## 6. Core SQL patterns
-
-Tile and filter (free):
-
-```sql
-SELECT x, y, tile FROM (SELECT RS_TileExplode(RS_FromPath('<s3>'), 1024, 1024) AS (x, y, tile))
-WHERE RS_Intersects(tile, ST_GeomFromText('<aoi>', 4326))
-```
-
-Zonal (window-first, one call per field-tile pair; `geom_r` is the polygon in the raster CRS):
-
-```sql
-SELECT id, sum(st.sum) / sum(st.count) AS mean_v, sum(st.count) AS n_px FROM (
-  SELECT f.id, RS_ZonalStatsAll(RS_Clip(t.r, 1, ST_Envelope(f.geom_r)), f.geom_r, 1) AS st
-  FROM fields f JOIN tiles t ON RS_Intersects(t.r, f.geom_r)) WHERE st.count > 0 GROUP BY id
-```
-
-Sum and count per pair, divide once per field: a field split over tiles gets the exact mean.
-*Measured* 2026-10-05 (247,613 California fields, 273 k pairs, identical per-field results):
-`RS_ZonalStatsAll` = two `RS_ZonalStats` calls (296 s both); bbox `RS_Clip` first 273 s (-8 %).
-The boundary rule is an analyst decision (below). The argument after `stat` in
-`RS_ZonalStats(r, g, band, stat, ...)` is `allTouched`, not `excludeNoData`: set it on purpose
-and state it in the pipeline header.
-
-Terrain at any scale (fastest measured, exact; full recipe and numbers in `recipes_terrain.md`
-"Recommended pipeline", UDFs in `code_sedona_udfs.md`):
-
-```python
-paths = sedona.table("wherobots_open_data.copernicus_dem.glo_30m").where(F.col("name").isin(file_names)) \
-    .selectExpr("regexp_replace(RS_BandPath(rast), '^s3://', 's3a://') AS p").distinct()
-tiles = paths.selectExpr("RS_TileExplode(RS_FromPath(p), 2048, 2048) AS (x, y, rast)")   # or glob the bucket
-tiles = with_neighbour_files(tiles, pad_deg=2 * pixel_size)          # path via RS_BandPath + neighbour files
-out = (tiles.selectExpr("path", "x", "y", empty_template_sql("rast"), "rast", "neighbours")
-       .select("path", "x", "y", slope_nb_udf(F.col("t"), F.col("rast"), F.col("neighbours")).alias("r"))
-       .selectExpr("path", "x", "y", "RS_SetBandNoDataValue(r, 1, CAST('NaN' AS DOUBLE)) AS r"))
-```
-
-Export (distributed, one file per row; naming in `export_and_render.md`):
-
-```python
-df.selectExpr("RS_AsCOG(r) AS raster_binary", "<unique name expr> AS path") \
-  .write.format("raster").option("rasterField", "raster_binary").option("pathField", "path") \
-  .option("fileExtension", ".tif").save(out_dir)
-```
-
-## 7. Top rules
+## 5. Top rules
 
 1. Tile at the COG block size, footprint-filter with `RS_Intersects`, only then touch pixels.
 2. Never pass an untiled scene to a UDF, `RS_AsInDB`, a stack or MapAlgebra (241 MB per
@@ -242,7 +190,7 @@ df.selectExpr("RS_AsCOG(r) AS raster_binary", "<unique name expr> AS path") \
     write a tile index plus manifest beside them; the writer nests files under `part-*` and that
     cannot be turned off.
 
-## 8. Open data gotchas
+## 6. Open data gotchas
 
 - `wherobots_open_data.sentinel2.l2a_source_items`: STAC items linking DN files with 1024-px
   blocks. Filter scenes by `eo:cloud_cover` before reading pixels.
@@ -277,8 +225,6 @@ These change the numbers, not the runtime. Ask, then record the answer in the pi
 
 ## Sibling skills
 
-- `wherobots-raster-outdb` (if installed; proposed in wherobots/agent-skills#7) — diagnosing whether a stored raster column is still out-db, and the
-  traps on the `RS_MapAlgebra` path (Jiffle syntax, `COUNT(*)` not forcing evaluation).
 - `wherobots-open-data-catalog` — the raster tables in `wherobots_open_data` as data: coverage,
   snapshots, join keys.
 - `wherobots-pipeline-designer` — where raster stages sit in a Bronze/Silver/Gold pipeline.

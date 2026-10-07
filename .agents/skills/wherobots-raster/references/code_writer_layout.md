@@ -3,11 +3,16 @@
 The distributed raster writer nests every file under `part-*` folders and cannot be told not to. Run
 these **after** the write, and only when the analyst wants one flat folder (see
 `export_and_render.md`). Uses the session's Hadoop FileSystem, so the writer's credentials apply; on
-s3a each move is a server-side copy + delete. Refuses to move anything when two files share a name,
+s3a each move is a server-side copy + delete. Moves only files directly inside `<tiles_dir>/part-*/`;
+other `.tif` files under the tree are counted and left alone. Refuses to move anything when two files share a name,
 never overwrites, safe to rerun, and removes the emptied `part-*` folders and `_SUCCESS` only after
 every file is in place.
 
-*Measured* 2026-10-05: CONUS slope, 3,603 COGs (51.7 GB), `tiny` runtime, 48 threads: moved in 99 s,
+`rewrite_index_paths` keeps the old index aside until the new one is renamed into place, and
+restores it if the rename fails.
+
+*Measured* 2026-10-05 (before the part-* filter and the safe swap were added; untested on the
+cluster since): CONUS slope, 3,603 COGs (51.7 GB), `tiny` runtime, 48 threads: moved in 99 s,
 index rewritten in 18 s, all 3,603 files read back from the flat folder.
 
 ## Tile name expression
@@ -22,8 +27,10 @@ def tile_name_expr(col: str, product: str, variant: str, cell: str) -> str:
     """SQL expression for <product>_<variant>_e<srid>_<cell>_<ulx>_<uly>: projected CRSs get
     zero-padded integer corners, geographic CRSs (4326/4269) get w122p0400_n37p9500 style."""
     ulx, uly, srid = f"RS_UpperLeftX({col})", f"RS_UpperLeftY({col})", f"RS_SRID({col})"
-    proj = (f"CONCAT('_x', LPAD(CAST(CAST({ulx} AS BIGINT) AS STRING), 7, '0'), "
-            f"'_y', LPAD(CAST(CAST({uly} AS BIGINT) AS STRING), 7, '0'))")
+    # 8 digits (Spark LPAD truncates longer values) and an 'm' for negative corners: fits EPSG:3857,
+    # southern UTM northings and Albers west of the central meridian.
+    proj = (f"CONCAT('_x', IF({ulx} < 0, 'm', ''), LPAD(CAST(CAST(ABS({ulx}) AS BIGINT) AS STRING), 8, '0'), "
+            f"'_y', IF({uly} < 0, 'm', ''), LPAD(CAST(CAST(ABS({uly}) AS BIGINT) AS STRING), 8, '0'))")
     geo = (f"CONCAT('_', IF({ulx} < 0, 'w', 'e'), LPAD(CAST(CAST(FLOOR(ABS({ulx})) AS INT) AS STRING), 3, '0'), 'p', "
            f"LPAD(CAST(CAST(ROUND((ABS({ulx}) - FLOOR(ABS({ulx}))) * 10000) AS INT) AS STRING), 4, '0'), "
            f"'_', IF({uly} < 0, 's', 'n'), LPAD(CAST(CAST(FLOOR(ABS({uly})) AS INT) AS STRING), 2, '0'), 'p', "
@@ -59,10 +66,16 @@ def flatten_written_tiles(sedona, tiles_dir: str, threads: int = 32, dry_run: bo
         p = it.next().getPath()
         if p.getName().endswith(".tif"):
             files.append(p.toString())
-    nested = [f for f in files if f.rsplit("/", 1)[0].rstrip("/") != root_q]
-    names = [f.rsplit("/", 1)[1] for f in files]
+    def parent(f):
+        return f.rsplit("/", 1)[0].rstrip("/")
+
+    # only writer output moves: <root>/part-*/<name>.tif; any other .tif under the tree is left alone
+    nested = [f for f in files if parent(f).rsplit("/", 1)[-1].startswith("part-") and parent(parent(f)) == root_q]
+    flat0 = [f for f in files if parent(f) == root_q]
+    names = [f.rsplit("/", 1)[1] for f in nested + flat0]
     dupes = sorted({n for n in names if names.count(n) > 1}) if len(set(names)) != len(names) else []
-    out = {"tif_total": len(files), "nested": len(nested), "already_flat": len(files) - len(nested), "duplicates": dupes[:20]}
+    out = {"tif_total": len(files), "nested": len(nested), "already_flat": len(flat0),
+           "other_ignored": len(files) - len(nested) - len(flat0), "duplicates": dupes[:20]}
     if dupes:
         raise ValueError(f"duplicate tile names, nothing moved: {dupes[:10]}")
     if dry_run or not nested:
@@ -81,11 +94,16 @@ def flatten_written_tiles(sedona, tiles_dir: str, threads: int = 32, dry_run: bo
         if st.isFile() and st.getPath().getName().endswith(".tif"):
             flat += 1
     out["flat_after"] = flat
-    if flat == len(files) and not out["failed"]:
+    if flat == len(nested) + len(flat0) and not out["failed"]:
         removed = 0
         for st in fs.listStatus(root):
             n = st.getPath().getName()
-            if (st.isDirectory() and n.startswith("part-")) or n == "_SUCCESS":
+            if st.isDirectory() and n.startswith("part-"):
+                if fs.listFiles(st.getPath(), True).hasNext():  # still holds files we left alone
+                    continue
+                fs.delete(st.getPath(), True)
+                removed += 1
+            elif n == "_SUCCESS":
                 fs.delete(st.getPath(), True)
                 removed += 1
         out["removed_writer_entries"] = removed
@@ -104,12 +122,13 @@ def rewrite_index_paths(sedona, index_dir: str, tiles_dir: str, path_col: str = 
     conf = sedona.sparkContext._jsc.hadoopConfiguration()
     src, dst = jvm.org.apache.hadoop.fs.Path(tmp), jvm.org.apache.hadoop.fs.Path(index_dir.rstrip("/"))
     fs = dst.getFileSystem(conf)
-    fs.delete(dst, True)
-    fs.rename(src, dst)
+    old = jvm.org.apache.hadoop.fs.Path(index_dir.rstrip("/") + "_old")
+    fs.delete(old, True)
+    if not fs.rename(dst, old):  # keep the old index until the new one is in place
+        raise IOError(f"could not move {index_dir} aside; new index left at {tmp}")
+    if not fs.rename(src, dst):
+        fs.rename(old, dst)
+        raise IOError(f"could not move {tmp} to {index_dir}; old index restored")
+    fs.delete(old, True)
     return n
 ```
-
-Known limitations (*untested* fixes, so the code above is left as validated): the recursive
-listing moves any `.tif` under `tiles_dir`, not only those in `part-*` folders, so point it at a
-folder that holds only writer output; `rewrite_index_paths` deletes the old index before an
-unchecked rename, so check that `<index_dir>` exists afterwards.

@@ -14,22 +14,23 @@ the template; the empty template gave bit-identical single-band output (2026-10-
 *Measured* 2026-10-05, Copernicus GLO-30 4-file corner, 3600 x 3600 cells: `slope_nb_udf` with
 `with_neighbour_files` matches a single pass over the merged mosaic to 0.0000 deg on file seams.
 
-Known limitations (left as validated; fixes *untested*):
+Changes after the cluster validation (2026-10-07, checked locally: a stubbed-runtime read across a
+two-file seam equals the merged array, and a ring with no neighbour file is NaN, never 0):
+`open_source` is a context manager that exits its `rasterio.Env` with the file; it warns when the
+Sedona AWS session is unavailable instead of silently using the default AWS chain (an Access
+Denied in the UDF while SQL reads the same file points there); `read_with_halo` uses masked reads,
+so the file's nodata and the ring outside the file become NaN for any input dtype.
 
-- `open_source` enters a `rasterio.Env` and never exits it: one Env per file open on a long-lived
-  Python worker. Harmless at the measured scales; wrap the read in `with rasterio.Env(...)` if a
-  worker opens thousands of files.
-- If `sedona.spark.raster.gdal_conf.get_rasterio_aws_session` cannot be imported, `open_source`
-  falls back to the default AWS chain without saying so; an Access Denied in the UDF while SQL
-  reads the same file points here.
-- `read_with_halo` reads as float32 with NaN fill: right for DEMs and indexes, it converts
-  integer imagery to float.
+Trade-off to know:
+
 - The single-file terrain UDFs use the tile-centre latitude for geographic cell sizes; the `*_nb_udf`
   variants use per-row sizes (`cell_sizes_rows_of`) and match a single pass exactly. Prefer the
   `*_nb_udf` variants on EPSG:4326/4269 DEMs; the centre-latitude error grows with tile height.
 
 ```python
+import contextlib
 import math
+import warnings
 
 import numpy as np
 
@@ -37,7 +38,7 @@ import numpy as np
 def empty_template_sql(rast_col="rast", alias="t", band_type="F"):
     """SQL for a georeferencing template that reads NO pixels: an empty in-db raster with the tile's
     size, geotransform and SRID. Use it instead of RS_AsInDB(tile) as the `with_bands()` template.
-    Measured 2026-10-05 (one cluster, 32 cores, 313 M cells, results bit-identical): 46 s vs 79 s;
+    Measured 2026-10-05 (one cluster, 32 cores, paired runs, results bit-identical): about 40 % less wall time;
     RS_AsInDB makes the JVM read the same window from S3 that the UDF reads again."""
     r = rast_col
     return (f"RS_MakeEmptyRaster(1, '{band_type}', RS_Width({r}), RS_Height({r}), RS_UpperLeftX({r}), RS_UpperLeftY({r}), "
@@ -82,24 +83,27 @@ if HAVE_SEDONA:
             return "/vsicurl/" + path
         return path
 
+    @contextlib.contextmanager
     def open_source(path: str, requester_pays: bool = False):
-        """Open the out-db source file with rasterio using the session's S3 credentials (the same helper
-        SedonaRaster uses). requester_pays=True for buckets like s3://naip-analytic."""
+        """Context manager: open the out-db source file with rasterio using the session's S3 credentials
+        (the same helper SedonaRaster uses). requester_pays=True for buckets like s3://naip-analytic.
+        The rasterio.Env is exited with the file, so a long-lived Python worker does not pile up Envs."""
         import rasterio
 
         try:
             from sedona.spark.raster.gdal_conf import get_rasterio_aws_session
 
             session = get_rasterio_aws_session(path)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            warnings.warn(f"open_source: no Sedona AWS session for {path} ({e!r}); using the default AWS chain")
             session = None
         opts = {"AWS_REQUEST_PAYER": "requester"} if requester_pays else {}
         if session is not None:
             env = rasterio.Env(session=session, AWS_NO_SIGN_REQUEST="YES" if getattr(session, "unsigned", False) else "NO", **opts)
         else:
             env = rasterio.Env(**opts)
-        env.__enter__()
-        return rasterio.open(gdal_path(path), mode="r")
+        with env, rasterio.open(gdal_path(path), mode="r") as src:
+            yield src
 
     def _halo_window(src, outdb, pad):
         t, at = src.transform, outdb.affine_trans
@@ -124,33 +128,22 @@ if HAVE_SEDONA:
         from rasterio.windows import Window
 
         h, w = outdb.height + 2 * pad, outdb.width + 2 * pad
-        src = open_source(outdb.path, requester_pays)
-        try:
+        src_band = outdb.outdb_meta.band_indices[band] + 1
+        with open_source(outdb.path, requester_pays) as src:
             col0, row0 = _halo_window(src, outdb, pad)
-            src_band = outdb.outdb_meta.band_indices[band] + 1
-            arr = src.read(src_band, window=Window(col0, row0, w, h), boundless=True,
-                           fill_value=np.nan, out_dtype="float32")
-            nodata = src.nodata
-        finally:
-            src.close()
-        if nodata is not None and not (isinstance(nodata, float) and math.isnan(nodata)):
-            arr[arr == nodata] = np.nan
+            # masked read: the file's nodata AND the ring outside the file come back masked, for any dtype
+            arr = src.read(src_band, window=Window(col0, row0, w, h), boundless=True, masked=True,
+                           out_dtype="float32").filled(np.nan)
         for p in [q for q in (neighbours or "").split(";") if q]:
             if not np.isnan(arr).any():
                 break
-            nsrc = open_source(p, requester_pays)
-            try:
+            with open_source(p, requester_pays) as nsrc:
                 c0, r0 = _halo_window(nsrc, outdb, pad)
                 cw = clip_window(c0, r0, w, h, nsrc.width, nsrc.height)
                 if cw is None:
                     continue
                 sc, sr, ww, hh, dc, dr = cw
-                part = nsrc.read(src_band, window=Window(sc, sr, ww, hh), out_dtype="float32")
-                nnod = nsrc.nodata
-            finally:
-                nsrc.close()
-            if nnod is not None and not (isinstance(nnod, float) and math.isnan(nnod)):
-                part[part == nnod] = np.nan
+                part = nsrc.read(src_band, window=Window(sc, sr, ww, hh), masked=True, out_dtype="float32").filled(np.nan)
             dst = arr[dr:dr + hh, dc:dc + ww]
             hole = np.isnan(dst)
             dst[hole] = part[hole]
