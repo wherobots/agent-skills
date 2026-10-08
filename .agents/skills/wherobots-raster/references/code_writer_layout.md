@@ -20,7 +20,8 @@ index rewritten in 18 s, all 3,603 files read back from the flat folder.
 `<product>_<variant>_e<srid>_<cell>_<ulx>_<uly>` from the tile's upper-left corner: zero-padded
 integers in a projected CRS, `w122p0400_n37p9500` style for EPSG:4326/4269. *Validated* 2026-10-05
 on UTM, NAD83 and WGS84 tiles in all four hemisphere combinations and on a real Copernicus GLO-30
-tile (`export_and_render.md` lists the outputs and the width limits of the projected form).
+tile; the 8-digit signed projected form re-validated 2026-10-07 on UTM north/south, EPSG:3857 and
+CONUS Albers corners (outputs in `export_and_render.md`).
 
 ```python
 def tile_name_expr(col: str, product: str, variant: str, cell: str) -> str:
