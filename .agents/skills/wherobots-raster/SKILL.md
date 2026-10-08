@@ -5,33 +5,38 @@ description: Use for raster analysis on WherobotsDB - tiling, out-db vs in-db re
 
 # Raster analysis on WherobotsDB
 
-How to get correct numbers out of rasters on Wherobots without reading pixels you do not need:
-which pattern fits the question, who should read the pixels (JVM or Python), how to keep tiled
-focal operations seam-free, and which decisions belong to the analyst.
+Best practice for raster work on Wherobots, for any source the user brings: inspect the source,
+pick the pattern by what the question needs, read only the pixels you need, keep tiled focal
+operations seam-free, and verify the result with a check that can fail. Named datasets appear
+only as worked examples.
 
-> Validated on Wherobots Cloud (Spark 4.1.3, `small` runtime) job runs **2026-09-26 to
-> 2026-10-05**; reference code unit tests last run 2026-10-07 against Sentinel-2 L2A, Copernicus GLO-30, USGS 3DEP 1/3 arc-second and NAIP
-> COGs; spot checks re-run 2026-10-07. Numbers are from those runs or from local unit tests of the reference code; anything not
-> measured is marked *untested*. Re-check on runtime upgrades.
+> Validated on Wherobots Cloud (Spark 4.1.3, `small`/`tiny` runtimes) job runs **2026-09-26 to
+> 2026-10-07**, plus local unit tests of the reference code (2026-10-08). Examples were measured
+> on Sentinel-2 L2A, Copernicus GLO-30, USGS 3DEP 1/3 arc-second and NAIP; they illustrate the
+> rules and are not the scope. Anything not measured is marked *untested*. Re-check on runtime
+> upgrades.
 
 **Read the reference file the task needs, in full:**
 
 | File | When |
 |------|------|
-| [`references/decisions_resampling.md`](references/decisions_resampling.md) | before any pipeline with mixed resolutions, small polygons, geographic DEMs, unknown units: the questions to ask the analyst and what to recommend |
-| [`references/loading_units_patterns.md`](references/loading_units_patterns.md) | entry points and formats, rescale defaults, DN vs reflectance, the core tile/zonal/terrain/export patterns, the out-db cast check, `RS_MapAlgebra` traps |
-| [`references/tile_vs_zonal.md`](references/tile_vs_zonal.md) | choosing between full-tile work and per-polygon/per-point work; measured costs |
-| [`references/edge_effects.md`](references/edge_effects.md) | any focal/neighbourhood operation or scene-wide statistic on tiles: halo widths, two-pass, verification |
-| [`references/recipes_terrain.md`](references/recipes_terrain.md) | slope, aspect, hillshade, TRI, TPI, landforms, roughness, curvature, generic focal |
-| [`references/recipes_indexes.md`](references/recipes_indexes.md) | NDVI, GNDVI, EVI, SAVI, MSAVI, NDWI, MNDWI, NDMI, NBR, NBR2, NDBI, BSI, CIre; SCL cloud mask; units |
-| [`references/export_and_render.md`](references/export_and_render.md) | GeoTIFF/COG export, tile naming and index, reading back, `wherobots_gl.Map`, QGIS caveat |
-| [`references/code_terrain_focal.md`](references/code_terrain_focal.md) | numpy/scipy terrain and focal functions (Horn slope, aspect, hillshade, TRI, TPI, landforms, curvature, focal stats) |
-| [`references/code_indexes.md`](references/code_indexes.md) | numpy spectral index, SCL mask and in-memory COG functions |
-| [`references/code_sedona_udfs.md`](references/code_sedona_udfs.md) | the `@sedona_vectorized_udf` wrappers, halo reader, neighbour-file halo, empty template |
-| [`references/code_writer_layout.md`](references/code_writer_layout.md) | tile naming expression, flattening the raster writer's `part-*` folders, rewriting the tile index |
+| [`references/decisions_resampling.md`](references/decisions_resampling.md) | mixed resolutions, small polygons, geographic CRS, unknown units: what to ask and the default to use |
+| [`references/loading_units_patterns.md`](references/loading_units_patterns.md) | entry points and formats, rescale defaults, the units check, core tile/zonal/export patterns, out-db cast check, `RS_MapAlgebra` traps |
+| [`references/tile_vs_zonal.md`](references/tile_vs_zonal.md) | full-tile vs per-polygon vs per-point work; measured costs; zonal reliability flags |
+| [`references/edge_effects.md`](references/edge_effects.md) | any focal/neighbourhood operation or scene-wide statistic on tiles: halo widths, cross-file halos, two-pass, verification with a negative control |
+| [`references/recipes_terrain.md`](references/recipes_terrain.md) | the generic focal pipeline template; slope, aspect, hillshade, TRI, TPI, landforms, roughness, curvature |
+| [`references/recipes_indexes.md`](references/recipes_indexes.md) | spectral indexes (NDVI ... CIre), cloud masks, the units check per target type |
+| [`references/export_and_render.md`](references/export_and_render.md) | output format and location decisions, COG export, tile naming, index and manifest, reading back, rendering |
+| [`references/code_terrain_focal.md`](references/code_terrain_focal.md) | numpy/scipy terrain and focal functions |
+| [`references/code_indexes.md`](references/code_indexes.md) | numpy spectral index, mask and in-memory COG functions |
+| [`references/code_sedona_udfs.md`](references/code_sedona_udfs.md) | `@sedona_vectorized_udf` terrain wrappers, halo reader, neighbour-file halo, empty template |
+| [`references/code_index_udfs.md`](references/code_index_udfs.md) | spectral index UDFs (raster out, scalar out, per polygon) |
+| [`references/code_writer_layout.md`](references/code_writer_layout.md) | tile naming expression, flattening the writer's `part-*` folders, index path rewrite |
+| [`references/code_pipeline.md`](references/code_pipeline.md) | file selection for an AOI, focal pipeline, tile index, manifest, single-pass check, job driver skeleton |
 
-The `code_*` files are one Python module split by topic. Paste the sections you need into a
-notebook cell, or above the driver of a job run (a job run uploads a single script).
+The `code_*` files are one Python module split by topic. Concatenate their `python` blocks in the
+order of the table above (terrain_focal, indexes, sedona_udfs, index_udfs, writer_layout,
+pipeline) into one notebook cell or above the driver of a job run.
 
 ## 1. Mental model: a raster is a reference until something asks for pixels
 
@@ -40,192 +45,174 @@ notebook cell, or above the driver of a job run (a job run uploads a single scri
 | **out-db** | path + pixel window + band list + georeferencing | `RS_FromPath`, raster reader, STAC reader, `RS_TileExplode`, `RS_Clip` with a rectangle in the raster CRS |
 | **in-db** | the pixel array | `RS_AsInDB`, `RS_StackTileExplode`, polygon `RS_Clip`, `RS_Band`, `RS_Resample`, `RS_MapAlgebra`, `RS_FromGeoTiff`, any raster-returning UDF |
 
-Out-db reads fetch only the COG blocks under the requested window (HTTP range requests,
-64 KB read-ahead, per-core disk cache). **Anything that produces an in-db raster reads its
-whole input extent.** Tile first, then transform.
-
-What reads pixels:
+Out-db reads fetch only the COG blocks under the requested window. **Anything that produces an
+in-db raster reads its whole input extent.** Tile first, then transform.
 
 | Reads nothing | Header only | A window | Whole coverage |
 |---------------|-------------|----------|----------------|
-| `RS_FromPath`, `RS_TileExplode`, `RS_Envelope`, `RS_Intersects`, `RS_Width`, `RS_NumBands`, `RS_SRID`, rectangle `RS_Clip` (same SRID, default crop, no nodata arg) | `RS_MetaData` | `RS_ZonalStats*` (bbox + 1 px when the bbox is < 25 % of the coverage), `RS_Value(s)` (blocks under the points), a UDF on an **out-db** tile (rasterio window read in Python) | polygon `RS_Clip` or any CRS mismatch, `RS_SummaryStats*`, `RS_Band`, `RS_Resample`, `RS_AsInDB`, `RS_StackTileExplode` (per output tile), `RS_Union_Aggr`, `RS_AsGeoTiff`/`RS_AsCOG`, `RS_MapAlgebra` |
+| `RS_FromPath`, `RS_TileExplode`, `RS_Envelope`, `RS_Intersects`, `RS_Width`, `RS_NumBands`, `RS_SRID`, rectangle `RS_Clip` (same SRID, default crop, no nodata arg) | `RS_MetaData` | `RS_ZonalStats*` on a small zone, `RS_Value(s)` (blocks under the points), a UDF on an **out-db** tile (rasterio window read) | polygon `RS_Clip` or any CRS mismatch, `RS_SummaryStats*`, `RS_Band`, `RS_Resample`, `RS_AsInDB`, `RS_StackTileExplode` (per output tile), `RS_Union_Aggr`, `RS_AsGeoTiff`/`RS_AsCOG`, `RS_MapAlgebra` |
 
 Measured on one Sentinel-2 scene: polygon clip in EPSG:4326 against the UTM scene 14.7 s and
-120.6 M pixels; rectangle clip in the scene CRS then polygon clip 0.12 s and 10.8 k pixels.
-Same statistics. The difference is wasted I/O.
+120.6 M pixels; rectangle clip in the scene CRS then polygon clip 0.12 s and 10.8 k pixels. Same
+statistics.
 
 ## 2. The Python raster UDF
 
 ```python
-from sedona.spark.raster import SedonaRaster
-from sedona.spark.sql.functions import sedona_vectorized_udf
-from sedona.spark.sql.types import RasterType
-from shapely.geometry.base import BaseGeometry
-
 @sedona_vectorized_udf(return_type=RasterType())
-def ndvi_raster_udf(red_indb: SedonaRaster, nir_outdb: SedonaRaster) -> SedonaRaster:
-    out = ...                                          # numpy from red_indb.as_numpy(), nir_outdb.as_numpy()
-    return red_indb.with_bands(out[np.newaxis])        # CHW, any band count/dtype, same H x W
+def ndvi_outdb_udf(template: SedonaRaster, red_outdb: SedonaRaster, nir_outdb: SedonaRaster) -> SedonaRaster:
+    out = ...                                        # numpy from red_outdb.as_numpy(), nir_outdb.as_numpy()
+    return template.with_bands(out[np.newaxis])      # CHW, any band count/dtype, same H x W
 
-df.selectExpr("RS_AsInDB(red) AS red_indb", "nir").select(ndvi_raster_udf(F.col("red_indb"), F.col("nir")))
+tiles.selectExpr(empty_template_sql("red"), "red", "nir").select(ndvi_outdb_udf(F.col("t"), F.col("red"), F.col("nir")))
 ```
 
 - Any mix of raster (`SedonaRaster`), geometry (`BaseGeometry`) and scalar arguments
   (`F.lit(...)`). Annotate or they arrive as bytes. Column API only, not `spark.udf.register`.
-- Rows run one at a time inside an Arrow batch. First call per cluster costs 15 to 20 s.
-- **Out-db argument** = cheap path: JVM ships a reference, Python reads the window through
-  rasterio. Values are **raw DN** (scale/offset not applied). Zero JVM pixel copies.
-- **In-db argument** = expensive path: JVM reads, serialises to Arrow, Python decodes.
-- **Raster out needs a template** for `with_bands()` (no `from_numpy` exists). Use an **empty**
-  template, not `RS_AsInDB(tile)`: `RS_MakeEmptyRaster(1, 'F', RS_Width(r), RS_Height(r),
-  RS_UpperLeftX(r), RS_UpperLeftY(r), RS_ScaleX(r), RS_ScaleY(r), RS_SkewX(r), RS_SkewY(r),
-  RS_SRID(r))` reads no pixels (`empty_template_sql` in `code_sedona_udfs.md`). *Measured*
-  2026-10-05: about 40 % less wall time in paired runs, identical output. `RS_AsInDB` only when the UDF
-  actually needs those pixels from the JVM (many small rows, see 3).
+- **Out-db argument** = cheap: the JVM ships a reference, Python reads the window through
+  rasterio. Values are **raw DN** (file scale/offset not applied). **In-db argument** = the JVM
+  reads, serialises to Arrow, Python decodes.
+- **Raster out needs a template** for `with_bands()` (there is no `from_numpy`). Use the empty
+  template (`empty_template_sql`): it reads no pixels. *Measured* 2026-10-05: about 40 % less wall
+  time than `RS_AsInDB(tile)` in paired runs, identical output.
 - `as_numpy()` (bands, H, W); `as_numpy_masked()` turns per-band nodata into NaN;
-  `bands_meta[i].nodata`, `affine_trans`, `crs_wkt`, `width`, `height`, `path`,
-  `outdb_meta.band_indices`.
-- Runtime has numpy, scipy, rasterio, scikit-learn; xarray-spatial does not import (numba
-  CUDA); libpysal/esda install as PyPI dependencies.
-- Requester-pays buckets (NAIP `s3://naip-analytic`): SQL works through a storage
-  integration, Python needs `rasterio.Env(AWS_REQUEST_PAYER="requester")`.
-- **Vectorized vs legacy styles (measured 2026-09-30).** Same function, three styles, identical
-  results: on 121 large out-db tiles all tie (12.9 to 13.1 s, rasterio reads dominate); on 1,849
-  small in-db tiles the vectorized UDF and `pandas_udf` take 1.4 s against 3.5 s for the legacy
-  row `udf`. Always use the vectorized decorator: it adds SedonaRaster decoding, typed geometry
-  arguments and raster returns on top of the `pandas_udf` transport.
+  `bands_meta[i].nodata`, `affine_trans`, `crs_wkt`, `width`, `height`, `path`.
+- First call per cluster costs 15 to 20 s. Runtime has numpy, scipy, rasterio, scikit-learn.
+- Requester-pays buckets: SQL works through a storage integration; Python needs
+  `open_source(path, requester_pays=True)`.
+- Use the vectorized decorator over the legacy row `udf`: on 1,849 small in-db tiles 1.4 s vs
+  3.5 s, identical results (measured 2026-09-30).
 
 ## 3. Decision trees
+
+Branches are by **property of the question and the source**; numbers are measured examples.
 
 ### Which pattern?
 
 ```text
 What do you need?
-├─ a number per POLYGON ........................ zonal: footprint join -> bbox RS_Clip (out-db) -> RS_ZonalStats
-│    ├─ custom pixel rule / masked raster out .. RS_AsInDB(RS_Clip(bbox)) into a masking UDF
-│    └─ thousands of tiny polygons ............. JVM reads (RS_AsInDB on windows); never Python per-row reads
-├─ a value per POINT ........................... RS_Value / RS_Values on the out-db raster, points in the raster CRS
-├─ a NUMBER for a whole area ................... scalar UDF on out-db band tiles -> [sum, count] -> aggregate
-├─ a new RASTER (index, mask) .................. empty template + bands out-db -> raster UDF
-├─ a new RASTER from a NEIGHBOURHOOD ........... same, plus the halo read (edge_effects.md, recipes_terrain.md)
-├─ a scene-wide STATISTIC (Moran, LISA, Gi*) ... two-pass: [sum,count] then halo partial sums (edge_effects.md)
-└─ a persisted multi-band STACK ................ RS_StackTileExplode(ARRAY(...), refIdx, w, h); otherwise no stack
+├─ a number per POLYGON ................. see "Zonal decision" below
+├─ a value per POINT .................... RS_Value / RS_Values on the out-db raster, points in the raster CRS
+├─ a NUMBER for a whole area ............ scalar UDF on out-db band tiles -> [sum, count] -> aggregate
+├─ a new RASTER per pixel (index, mask) . empty template + bands out-db -> raster UDF
+├─ a new RASTER from a NEIGHBOURHOOD .... same + halo read; generic focal pipeline (recipes_terrain.md)
+├─ a scene-wide STATISTIC (Moran, Gi*) .. two passes: [sum, count] then halo partial sums (edge_effects.md)
+└─ a persisted multi-band STACK ......... RS_StackTileExplode(ARRAY(...), refIdx, w, h); otherwise never stack
 ```
 
-### Who reads the pixels?
+### Zonal decision
 
 ```text
-How many rows, how big?
-├─ few large tiles (scene at 1024 px) ......... Python reads out-db (18 s/scene vs 34 s stack-UDF vs 43 s MapAlgebra)
-└─ many small rows (field windows on NAIP) .... JVM reads: RS_AsInDB / bbox windows (6 s vs 233 s Python per-row)
+What is the per-polygon statistic?
+├─ single band, built-in stat (mean, sum, count, min, max)
+│     RS_ZonalStatsAll(RS_Clip(tile, band, ST_Envelope(geom_r)), geom_r, band) per (polygon, tile),
+│     then sum(sum) / sum(count) per polygon
+├─ ratio or index (NDVI, NDMI, any (a-b)/(a+b))
+│     index FIRST, per pixel, on the bbox windows of each band (ndvi_sum_count_in_polygon_udf),
+│     then sum(sum) / sum(count). Never the index of the band means.
+└─ who reads the windows?  rows x window size decides, not the dataset:
+      few hundred pairs, windows ~100+ px ... Python reads out-db windows (211 pairs: 17.6 s)
+      thousands of pairs, small windows ...... JVM reads: RS_AsInDB(window) into the UDF
+                                               (1,398 pairs: 6.5 s vs 233 s Python per-row opens)
+Always: carry n_px and reliable = n_px >= MIN_PX (default 10), and record the boundary rule.
 ```
 
-### Which grid? (details and the questions to ask in decisions_resampling.md)
+### Which grid? (details in decisions_resampling.md)
 
 ```text
 Bands at different resolutions?
-├─ objects small (fields < 5 acres, footprints) ... finest grid, nearest-neighbour up (16 small fields: 93 px at 10 m vs 22 at 20 m; NDMI differs up to 0.10)
-├─ objects large and the coarse band carries the signal ... coarse grid (pixels / 4; 32 s vs 41 s for a 3-band stack)
-└─ unsure .......................................... ask; state the grid in the pipeline header
-Raster geographic (EPSG:4326/4269)?
-└─ cell sizes in metres per row from the latitude (8.1 x 10.3 m for USGS 1/3" at 37.9 N) or reproject first
+├─ objects small relative to the coarse cell ... finest grid, nearest-neighbour up
+│     (16 fields < 5 acres: 93 px at 10 m vs 22 at 20 m; NDMI differed by up to 0.10)
+├─ objects large and the coarse band carries the signal ... coarse grid (4x fewer pixels)
+└─ unsure ...................................... ask; unattended: finest grid, state it in the header
+Geographic CRS (degrees)?
+└─ metric cell sizes per row from the latitude, dx and dy separately, or reproject first
 ```
 
 ### Focal operation on tiles?
 
 ```text
-Kernel radius r (3x3 -> 1, 5x5 -> 2, TPI radius r -> r, chained kernels -> sum)
-└─ pass a template AND the out-db tile; read window + r ring from the source COG; compute; trim
-   Without it: seams up to 19 deg of slope, mean tile slope off by 0.68 deg (256-px tiles). With it: 0.
-Source split over many files (Copernicus 1-degree COGs, 3DEP tiles, quads)?
-└─ add neighbour files per tile (with_neighbour_files), *_nb_udf(t, rast, neighbours)
-   Per-file halo on Copernicus (no nodata tag): 82.6 deg fake cliffs on 1-degree lines. Neighbour halo: 0.
+Kernel radius r (3x3 -> 1, 5x5 -> 2, TPI radius r -> r, chained kernels -> sum of radii)
+└─ read window + r ring from the SOURCE file through the out-db tile; compute; trim
+   (measured, no halo: seams up to 19 deg of slope; mean tile slope off by 0.68 deg on 256-px tiles)
+Source split over many files that share one grid?
+└─ neighbour-file halo: with_neighbour_files + *_nb_udf; fill the ring with NaN, never the file nodata
+   (measured: per-file halo on a source with no nodata tag -> 82.6 deg fake cliffs; neighbour halo -> 0)
+Files on different grids? -> resample to one grid or build a mosaic first (untested), then the above
 ```
 
-## 4. Loading, units, core patterns
+## 4. Know your source (inspect before choosing a pipeline)
 
-**Read [`references/loading_units_patterns.md`](references/loading_units_patterns.md)** before
-writing the first query: which entry point applies auto-rescale, formats the reader cannot open
-(no JPEG2000, HDF, Zarr), the DN-vs-reflectance check, and the tile/zonal/terrain/export
-patterns. The traps it covers:
+Run the probe in [`references/loading_units_patterns.md`](references/loading_units_patterns.md)
+("Probe a source") on one file of any table, bucket or path, then answer:
 
-- `RS_FromPath` rescales by default, the raster reader does not; the reader is DataFrame-only
-  and needs `s3a://`.
-- `RS_MetaData` first: block size (tile at it), `srid` 0 (unrecognised CRS: transforms silently
-  assume WGS84), striped blocks.
-- Units follow the **file's** tags, not STAC: `wherobots_open_data.sentinel2` files are DN /
-  10000 with **no** offset; a wrong offset pushed every field NDVI to 1.0 with no error.
-- Zonal: sum and count per (polygon, tile) pair, divide once per polygon.
-- Out-db check: `CAST(rast AS STRING)` starts with `LazyLoadOutDb`/`OutDb` (reference) or
-  `GridCoverage2D["genericCoverage"` (materialized). `RS_MapAlgebra` scripts are Jiffle, and
-  `COUNT(*)` does not evaluate them.
+| Check | Why it matters | Example |
+|-------|----------------|---------|
+| One file or many; the naming/grid rule | many files on one grid need neighbour-file halos; the rule drives `files_for_aoi` | Copernicus GLO-30 names each 1-degree file by its SW corner |
+| Internal block size (`RS_MetaData` tile width/height) | tile at it, or a multiple of it | Sentinel-2 COGs 1024 px; striped files (10812 x 1) work but tile explode is 14x slower |
+| Nodata tag present? | if absent, choose nodata explicitly; never fill with an absent tag | Copernicus has none: a 0-fill makes sea-level cliffs |
+| Scale/offset tags; what SQL vs UDF reads return | `RS_FromPath` applies tags, out-db UDF reads do not | `sentinel-cogs` files: no tags, DN / 10000 with no offset |
+| Pixel registration (UL corner vs grid lines) | tile names and seam masks follow the real corner | GLO-30 UL at -122.000139, not -122 |
+| CRS / SRID (0 = unrecognised) | transform vectors into it; SRID 0 silently assumes WGS84 | NLCD Albers resolved to SRID 0 |
+| What the values represent | surface vs bare earth, DN vs reflectance, class codes (nearest-only) | GLO-30 and ASTER are surface models; bare earth: USGS 3DEP, GEDTM30, FABDEM |
+| An out-db catalog table exists? | use it as tiles if its tiling suits the job, else as a **file index** (filter, `RS_BandPath`, re-tile) | `copernicus_dem.glo_30m` is 256-px tiles with 16-px slivers: as a file index, 2048-px re-tile ran 6.4x faster |
+
+The format the reader cannot open (JPEG2000, HDF, Zarr, GeoPackage rasters): convert to COG first.
 
 ## 5. Top rules
 
-1. Tile at the COG block size, footprint-filter with `RS_Intersects`, only then touch pixels.
-2. Never pass an untiled scene to a UDF, `RS_AsInDB`, a stack or MapAlgebra (241 MB per
-   UInt16 Sentinel-2 band, 964 MB as doubles).
-3. Window before polygon: rectangle `RS_Clip` in the raster CRS, or let `RS_ZonalStats` do it.
-   4 to 100x faster, 2.9 GB executor peak instead of 8.9 to 15.7 GB.
-4. Few large tiles: out-db into Python. Many small rows: JVM reads (`RS_AsInDB`).
-5. Raster out: empty template, never `RS_AsInDB` just for georeferencing; read pixels out-db in
-   the UDF. Metadata on the JVM (`RS_BandPath`: 0.5 s vs 6.2 s Python UDF, 1584 rows).
-6. Focal kernels need a halo of the kernel radius from the source COG (and from the neighbouring
-   files when the source is split; fill the ring with NaN, never the file nodata); scene-wide
-   statistics need two passes. Verify against a single-pass computation on a subset.
-7. Choose the grid by the size of the objects measured, not by cost; state it in the pipeline.
-8. Verify units and nodata on a known target; set nodata on every raster you write
-   (`RS_SetBandNoDataValue`) or `RS_SummaryStats` returns NaN.
+1. Inspect the source (section 4), tile at the block size, footprint-filter with
+   `RS_Intersects`, only then touch pixels.
+2. Never pass an untiled scene to a UDF, `RS_AsInDB`, a stack or MapAlgebra.
+3. Window before polygon: rectangle `RS_Clip` in the raster CRS, or let `RS_ZonalStats` do it
+   (4 to 100x faster measured; 2.9 GB executor peak instead of 8.9 to 15.7 GB).
+4. Raster out: empty template; read pixels out-db in the UDF. Metadata on the JVM
+   (`RS_BandPath` 0.5 s vs a Python UDF 6.2 s on 1584 rows).
+5. Focal kernels need a halo of the kernel radius from the source (and from neighbour files when
+   the source is split); scene-wide statistics need two passes.
+6. **Every verification has a negative control**: show the check fails on a known-bad variant
+   (no halo, per-file halo, wrong offset) before trusting that it passes.
+7. Choose the grid by the size of the objects measured, not by cost; state it in the header.
+8. Verify units on known targets chosen by what is on the ground (`recipes_indexes.md`); set
+   nodata on every raster you write: `RS_SetBandNoDataValue(r, 1, CAST('NaN' AS DOUBLE))` (the
+   2-argument form sets band 1 too; verified 2026-10-08).
 9. Check SRIDs on both sides (`RS_SRID`, `ST_SRID`); `ST_SetSRID` then `ST_Transform` into the
-   raster CRS; a mismatch (EPSG:4269 polygons against an EPSG:4326 raster) returns false silently.
-10. `RS_Clip` output has one band; clip bands separately. Geometry in the same CRS as the raster.
-11. Ratio indexes per polygon: index first, then aggregate. NDVI of the zonal band means is a
-    brightness-weighted mean, off by up to 0.12 NDVI on heterogeneous fields.
-12. Aspect is an angle: aggregate with a circular mean (sin/cos), never `RS_ZonalStats` mean.
-13. Benchmark with `count(col)` on every column or `collect()`; `df.count()` prunes UDFs.
-14. Sort by source path; `spark.wherobots.raster.outdb.readahead=4m` for whole-tile reads,
-    64 KB default for point sampling. Cache the vector side; persist stage outputs to Havasu.
-15. Name exported tiles `<product>_<variant>_<crs>_<cell>_<ulx>_<uly>.tif` from the tile's
-    upper-left corner (never bare grid indices), one product per folder, one run per stamp, and
-    write a tile index plus manifest beside them; the writer nests files under `part-*` and that
-    cannot be turned off.
+   raster CRS; a mismatch returns false silently.
+10. `RS_Clip` output has one band; clip bands separately.
+11. Ratio indexes per polygon: index first, then aggregate (the zonal decision above).
+12. Aspect is an angle: aggregate with a circular mean (sin/cos).
+13. Force work with `count(col)` or `collect()`; `df.count()` prunes UDFs. Persist a computed
+    raster before writing it and indexing it, or the UDF runs twice.
+14. Sort by source path; `spark.wherobots.raster.outdb.readahead=4m` for whole-tile reads, 64 KB
+    default for point sampling.
+15. Name tiles from their upper-left corner (`tile_name_expr`), one product per folder, one run
+    per stamp, and write a tile index and manifest beside them.
 
-## 6. Open data gotchas
+## 6. Running this as a job
 
-- `wherobots_open_data.sentinel2.l2a_source_items`: STAC items linking DN files with 1024-px
-  blocks. Filter scenes by `eo:cloud_cover` before reading pixels.
-- `wherobots_open_data.copernicus_dem.glo_30m`: 256-px out-db tiles of the 1-degree COGs,
-  EPSG:4326. For focal work use it as a **file index**: filter `name`, take `RS_BandPath`,
-  re-tile `RS_FromPath` at 2048 px (6.4x faster than the stored tiles; lookup by name 2 to 4 s vs
-  26 s for a bucket glob or an `RS_Intersects` filter over the global table).
-- Copernicus GLO-30 and ASTER GDEM (`aster_gdem.v3_30m`) are **surface** models (canopy,
-  buildings), not bare earth: say so when the product is slope or terrain. Bare-earth
-  alternatives outside the catalog: USGS 3DEP (US), GEDTM30 (global, CC-BY-4.0), FABDEM
-  (non-commercial).
+Skeleton in `code_pipeline.md` ("Driver skeleton"): `SedonaContext`, argparse with a **required**
+`--output-path`, every output URI printed, parameters in one block. Build one script: the
+`code_*` blocks in table order, then the driver. Upload it to a **shared** location (shared
+managed storage or a storage integration) and submit it with the CLI or SDK, covered by the
+`wherobots-develop` skill in this repo (`npx skills add wherobots/agent-skills@wherobots-develop`).
+The SDK's managed-upload default is the caller's private folder: with a service-principal key
+nobody can browse it.
 
-## Decisions to ask the analyst
+## Decisions (ask interactively; unattended jobs use the default and record it)
 
-These change the numbers, not the runtime. Ask, then record the answer in the pipeline header.
+Each changes the numbers or who can use them. Record the choice in the pipeline header **and** the
+output manifest (`write_manifest`).
 
-- **Zonal boundary rule** (before zonal statistics): centroid-in (default) or all-touched.
-  All-touched gives small polygons a value but pulls edge values in and double-counts cells
-  shared by neighbours. Fix it for the whole table. Details in `decisions_resampling.md` item 8.
-- **Output format** (before writing): who reads the result next, and how many times? COG tiles
-  plus a GeoParquet index (GIS deliverable, default), merged COG (small areas), Havasu table with
-  out-db references (queryable raster catalogue), Havasu table with in-db chips (ML samples),
-  GeoParquet (per polygon/point numbers), PNG (preview). State the cost of the choice. Table in
-  `export_and_render.md`.
-- **Output location** (before the first write): who needs to find the result and with which
-  identity? Shared managed storage for team-visible results, a storage integration bucket for
-  customer-owned deliverables, a Havasu table for queryable libraries. Never the caller's
-  private folder for job runs: a service-principal key writes where no human can browse.
-- **After any tiled write**: keep the writer's `part-*` layout (Spark-only consumers) or flatten
-  into one folder with the index updated (deliverables a person opens). See
-  `code_writer_layout.md`.
+| Decision | Ask | Unattended default |
+|----------|-----|--------------------|
+| Zonal boundary rule (`decisions_resampling.md` item 8) | centroid-in or all-touched? | centroid-in; output carries `n_px`, `reliable`, `boundary_rule` |
+| Grid for mixed resolutions | which band drives the answer; smallest object? | finest signal-bearing grid, nearest neighbour |
+| Output format (`export_and_render.md`) | who reads it next, how many times? | COG tiles + GeoParquet index + manifest; GeoParquet for per-polygon numbers |
+| Output location | who must find it, with which identity? | the job's required `--output-path` (shared or integration); fail if missing |
+| Writer layout after a tiled write | Spark-only consumers, or people? | keep `part-*` for intermediates; flatten deliverables (`flatten_written_tiles`) |
 
 ## Sibling skills
 
-- `wherobots-open-data-catalog` — the raster tables in `wherobots_open_data` as data: coverage,
-  snapshots, join keys.
+- `wherobots-develop` — submitting and monitoring the job runs these patterns run in.
+- `wherobots-open-data-catalog` — what raster tables `wherobots_open_data` holds (examples here).
 - `wherobots-pipeline-designer` — where raster stages sit in a Bronze/Silver/Gold pipeline.
-- `wherobots-develop` — submitting the job runs these patterns run in.

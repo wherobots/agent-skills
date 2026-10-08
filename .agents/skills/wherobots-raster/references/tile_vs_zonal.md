@@ -18,8 +18,8 @@ Pattern:
    tile as **separate out-db columns**. No stack.
 4. **Number out**: multi-argument scalar UDF on the out-db columns (`ndvi_sum_count_udf`),
    aggregate in Spark. Zero JVM pixel copies.
-5. **Raster out**: `RS_AsInDB(one_band)` as the template plus the other bands out-db into a
-   raster-returning UDF; then `RS_SetBandNoDataValue(r, CAST('NaN' AS DOUBLE))`.
+5. **Raster out**: the empty template (`empty_template_sql`) plus the bands out-db into a
+   raster-returning UDF; then `RS_SetBandNoDataValue(r, 1, CAST('NaN' AS DOUBLE))`.
 6. Export per tile with the distributed writer (see `export_and_render.md`), or persist the
    tiles to a Havasu table.
 
@@ -53,6 +53,24 @@ Rules of thumb for full-tile work:
 
 ## Zonal operations (one number per polygon)
 
+**Polygons:** any polygon table works (field boundaries, parcels, admin units, buffers; e.g. an
+Overture land-use layer). Check `ST_SRID` (a table tagged EPSG:4269 against EPSG:4326 geometry
+makes predicates return false silently), `ST_SetSRID` to the true SRID, then `ST_Transform` into
+the raster CRS. Compare polygon size with the cell size before choosing the grid
+(`decisions_resampling.md` item 2).
+
+**Reliability flags (every zonal output):** carry `n_px`, `reliable = n_px >= MIN_PX`
+(`MIN_PX = 10` by default: below about 10 cells one nodata pixel or the boundary rule dominates)
+and the boundary rule, as a column or in the manifest. Measured 2026-10-07: golf-fairway polygons
+on 10 m Sentinel-2 had 1 to 4 cells at the low end; without the flag nothing marks those values.
+
+```python
+MIN_PX, ALL_TOUCHED = 10, False      # unattended defaults; record both in the manifest
+per_poly = sedona.read.format("geoparquet").load(f"{OUT}/polygons_ndvi.parquet")   # any result with n_px
+per_poly = (per_poly.withColumn("reliable", F.col("n_px") >= MIN_PX)
+                    .withColumn("boundary_rule", F.lit("all-touched" if ALL_TOUCHED else "centroid-in")))
+```
+
 Pattern:
 
 1. Fix the vector side: `ST_SetSRID` to the true SRID, `ST_Transform` into the **raster CRS**
@@ -69,15 +87,16 @@ Pattern:
 5. Aggregate across tiles: `sum(mean * count) / sum(count)` grouped by polygon id, or return
    `[sum, count]` from the UDF and sum both.
 
+Single band (here a precomputed NDVI tile set; for an index from raw bands use the per-pixel
+UDF path, `recipes_indexes.md` "Call pattern 2"):
+
 ```sql
-SELECT s.id,
-       sum(s.mean_v * s.n) / sum(s.n) AS mean_ndvi, sum(s.n) AS n_px
+SELECT s.id, sum(s.st.sum) / sum(s.st.count) AS mean_ndvi, sum(s.st.count) AS n_px,
+       sum(s.st.count) >= 10 AS reliable, 'centroid-in' AS boundary_rule
 FROM (
-  SELECT f.id,
-         RS_ZonalStats(RS_Clip(t.ndvi, 1, f.bbox_r), f.geom_r, 1, 'mean')  AS mean_v,
-         RS_ZonalStats(RS_Clip(t.ndvi, 1, f.bbox_r), f.geom_r, 1, 'count') AS n
+  SELECT f.id, RS_ZonalStatsAll(RS_Clip(t.ndvi, 1, f.bbox_r), f.geom_r, 1, false) AS st
   FROM fields f JOIN ndvi_tiles t ON RS_Intersects(t.ndvi, f.geom_r)
-) s GROUP BY s.id
+) s WHERE s.st.count > 0 GROUP BY s.id
 ```
 
 *Measured*, 200 fields, 219 (field, tile) pairs, one NIR band:

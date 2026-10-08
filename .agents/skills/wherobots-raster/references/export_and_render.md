@@ -8,11 +8,11 @@ untested.
 One file per row, written by the executors with the session's storage credentials:
 
 ```python
-(df.selectExpr("RS_AsGeoTiff(terrain) AS raster_binary",
-               f"{tile_name_expr('terrain', 'terrain', 'halo', '10m')} AS path")   # code_writer_layout.md
-   .write.format("raster")
-   .option("rasterField", "raster_binary").option("pathField", "path").option("fileExtension", ".tif")
-   .mode("overwrite").save(f"{OUT}/tiles_halo"))
+# out: the persisted DataFrame from run_focal (columns path, x, y, r, tile_name), OUT from the driver
+(out.selectExpr("RS_AsCOG(r) AS raster_binary", "tile_name AS path")
+    .write.format("raster")
+    .option("rasterField", "raster_binary").option("pathField", "path").option("fileExtension", ".tif")
+    .save(f"{OUT}/tiles"))
 ```
 
 - `RS_AsGeoTiff(r)` plain GeoTIFF; `RS_AsCOG(r)` Cloud Optimized (internal tiling and
@@ -37,10 +37,10 @@ and ship the bytes through the same writer so the JVM uploads them with the sess
 credentials:
 
 ```python
-arr, origin, crs_wkt = mosaic(df, "terrain")               # CHW float32, top-left affine, WKT
+arr, origin, crs_wkt = mosaic(out, "r")                    # CHW float32, top-left affine, WKT
 affine6 = (origin.scale_x, origin.skew_x, origin.ip_x, origin.skew_y, origin.scale_y, origin.ip_y)
-cog = to_cog_bytes(arr, affine6, crs_wkt, descriptions=["slope_deg", "aspect_deg", "hillshade"])
-(sedona.createDataFrame([(bytearray(cog), "terrain_halo_e4269_1as3_w122p0400_n37p9500")], ["raster_binary", "path"])
+cog = to_cog_bytes(arr, affine6, crs_wkt, descriptions=["slope_deg"])
+(sedona.createDataFrame([(bytearray(cog), "slope_halo_merged_e4326_30m")], ["raster_binary", "path"])
  .write.format("raster").option("rasterField", "raster_binary").option("pathField", "path")
  .option("fileExtension", ".tif").mode("overwrite").save(f"{OUT}/cog"))
 ```
@@ -58,24 +58,35 @@ Alternative without Python: `RS_AsCOG(RS_AsInDB(aoi))` on the JVM for one clippe
 ## GeoParquet for vector results
 
 ```python
-per_field.write.format("geoparquet").mode("overwrite").save(f"{OUT}/fields_ndvi.parquet")
+per_poly = sedona.read.format("geoparquet").load(f"{OUT}/polygons_ndvi.parquet")   # any per-polygon result
+per_poly.write.format("geoparquet").save(f"{OUT}/polygons_ndvi_final.parquet")
 ```
 
 Keep a `geometry` column in EPSG:4326 for the map; stats columns as doubles. `RS_Envelope`
 of each tile gives a footprint polygon for a tile index.
 
-## Tile index with footprints
+## Tile index, manifest, and "opens"
 
-```sql
-SELECT x, y, RS_Envelope(terrain) AS geometry,
-       RS_SummaryStats(terrain, 'mean', 1) AS mean_slope_deg, RS_SummaryStats(terrain, 'max', 1) AS max_slope_deg,
-       CONCAT(<tile_name_expr>, '.tif') AS tile_file
-FROM halo_tiles
+Build the index **from the written files**, not from the DataFrame that produced them: no
+recompute, full paths without a join, and every file is proven to open.
+
+```python
+rows = build_tile_index(sedona, TILES_DIR, INDEX_DIR, bands="slope_deg")     # code_pipeline.md
+write_manifest(sedona, MANIFEST, {"product": "slope", "crs": "EPSG:4326", "nodata": "NaN", "halo_cells": 1,
+                                  "boundary_rule": None, "sources": paths, "run_stamp": args.run_stamp, "n_tiles": rows})
 ```
 
-written as GeoParquet (*measured* 9.5 s for 25 tiles including the stats). Join it back to the
-`binaryFile` listing on `tile_file` to get full S3 paths, and to polygons on
-`ST_Intersects(geometry, ...)` to find which files to open for an area.
+The index holds `path` (full, as `binaryFile` lists it: `s3a://`), `tile_file`, `footprint` (raster
+CRS), `geometry` (EPSG:4326), `srid`, `width`, `height`, `n_bands`, `nodata`, `bands`, and the band-1
+`valid_px`/`min_1`/`mean_1`/`max_1`. **"Opens" means a pixel read:** `RS_SummaryStatsAll(...)`
+reads every pixel; `RS_Width`/`RS_FromPath` read nothing and succeed on a broken file. Pass
+`with_stats=False` for very large outputs and spot-check instead. Join the index to polygons on
+`ST_Intersects(geometry, ...)` to find which files to open for an area. The manifest records the
+decisions (boundary rule, grid, nodata, units, halo, sources) so an unattended run is auditable.
+
+*Measured* 2026-10-07 (naive-user test, the same columns built with a listing join): 16 tiles, 0
+rows without a path, every file read back (51.8 M valid pixels). `build_tile_index` as packaged
+is *untested on the cluster*.
 
 ## Reading back
 
@@ -91,7 +102,10 @@ written as GeoParquet (*measured* 9.5 s for 25 tiles including the stats). Join 
 Static preview, band 1 or a chosen band, quick and safe:
 
 ```python
-SedonaUtils.display_image(sedona.sql(f"SELECT RS_AsImage(RS_Band(RS_AsInDB(RS_FromPath('{COG_URI}')), array(3)), 600) AS hillshade"))
+from sedona.spark import *          # provides SedonaUtils (as in the validated notebooks)
+
+COG_URI = sedona.read.format("geoparquet").load(INDEX_DIR).first()["path"]   # any written tile
+SedonaUtils.display_image(sedona.sql(f"SELECT RS_AsImage(RS_AsInDB(RS_FromPath('{COG_URI}')), 600) AS slope"))
 ```
 
 Interactive, `wherobots_gl.Map` (preinstalled in Wherobots notebooks; layers load **by URL in
@@ -99,6 +113,10 @@ the browser**, so sources must be in managed storage or a CORS-enabled bucket):
 
 ```python
 from wherobots_gl import Map
+
+COG_URI = sedona.read.format("geoparquet").load(INDEX_DIR).first()["path"]   # a written COG tile
+fields_out = f"{OUT}/polygons_ndvi.parquet"     # GeoParquet with a geometry column in EPSG:4326
+pts_out = f"{OUT}/points.parquet"
 Map(
     layers=[
         {"type": "cog", "source": COG_URI, "name": "slope (deg)", "band": 1, "colormap": "viridis", "rescale": [0, 45], "opacity": 0.85},
@@ -237,7 +255,9 @@ Rules:
   (`halo`, `nohalo`, `diff`, a scene id, a date). Never leave two variants with the same name
   in sibling folders; the distinction belongs in the file name, not the folder.
 - `crs`: `e<EPSG>`; `cell`: the cell size with unit (`10m`, `30m`, `1as3` for 1/3 arc-second).
-- `ulx`, `uly`: the tile's upper-left corner from `RS_UpperLeftX` / `RS_UpperLeftY`, zero-padded
+- `ulx`, `uly`: the tile's **actual** upper-left corner from `RS_UpperLeftX` / `RS_UpperLeftY`
+  (a source with half-pixel origins gives `w122p0001_n38p0001` for a tile on the 1-degree line:
+  correct, and the corner a seam mask must use), zero-padded
   integers in a projected CRS, or `w|e<deg>p<4 decimals>` / `n|s<deg>p<4 decimals>` in a
   geographic CRS. Two tiles of the same product and grid can never collide, and sorting the
   names sorts the tiles spatially.
@@ -247,7 +267,7 @@ Rules:
   `<product>/tiles_index.parquet`. One product per folder, one run per stamp; never overwrite a
   stamp. The `part-*` nesting is how the distributed writer works and cannot be turned off, so
   the index (footprint, SRID, size, bands, file name, full S3 path) is the authoritative map.
-  Build the full path in the index by listing the folder with `binaryFile` after the write.
+  `build_tile_index` lists the folder after the write and records the full path.
 - Put band meaning inside the file as well: `RS_AsCOG` does not write band descriptions, so
   record `bands` in the index (`slope_deg;aspect_deg;hillshade`) and in a sidecar `manifest.json`
   with CRS, cell size, nodata, kernel, halo width, source, and run stamp.

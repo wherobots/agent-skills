@@ -1,7 +1,9 @@
 # Decisions to make with the analyst before touching pixels
 
-Every item below changes the numbers, not just the runtime. Ask, record the answer in the
-pipeline (a constant with a comment), and only then write SQL. Numbers marked *measured* come
+Every item below changes the numbers, not just the runtime. Interactively: ask, record the
+answer in the pipeline (a constant with a comment), and only then write SQL. In an unattended
+job run: use the **Default** given per item and record it in the pipeline header and the
+output manifest. Rules are stated by property of the source; datasets appear as examples. Numbers marked *measured* come
 from Wherobots Cloud job runs (2026-09-26/27, `small` runtime); everything
 else is stated as a default, not a measurement.
 
@@ -33,6 +35,8 @@ Watersheds, counties, H3 cells at resolution 7 and coarser are *large*.
 
 **Default:** a polygon needs on the order of tens of cells for a stable mean; below about
 10 cells the boundary rule (centroid-in vs all-touched) and one nodata pixel dominate.
+In code: `MIN_PX = 10`, and every zonal output carries `n_px` and `reliable = n_px >= MIN_PX`
+(`tile_vs_zonal.md`). Flag, do not drop: the analyst decides what to do with unreliable rows.
 
 *Measured* (Sentinel-2 NDMI, 16 fields under 5 acres, Fresno County): median 93 cells per
 field at 10 m vs 22 at 20 m; 4 of 16 fields had fewer than 10 cells at 20 m; per-field NDMI
@@ -116,7 +120,7 @@ Then **verify on a known target** before trusting any tag, STAC field or collect
   below 0. If the numbers are off by 1000x or every index saturates, the units are wrong.
 - NAIP quads have a zero-valued collar; treat red + NIR = 0 as nodata or the collar drags means
   down (*measured* as part of the 0.031 disagreement above).
-- Any raster you write from a UDF: `RS_SetBandNoDataValue(r, CAST('NaN' AS DOUBLE))` (or the
+- Any raster you write from a UDF: `RS_SetBandNoDataValue(r, 1, CAST('NaN' AS DOUBLE))` (or the
   sentinel you used), otherwise `RS_SummaryStats` means include NaN and return NaN.
 - Nodata inside a focal window: a 3x3 kernel with NaN propagation yields a NaN ring one cell
   wide around every nodata cell (GDAL's default). The `tpi`/`focal_stat` functions in
@@ -150,7 +154,9 @@ for stencil-style focal work (*measured* locally: 2 MB per band, 0.1 s of maths)
 **Ask:** "Should a cell count for a polygon when its centre is inside, or whenever the polygon
 touches it?" This is the analyst's call: it changes what the number means, not whether it is
 correct. `RS_ZonalStats*` default is centroid-in (`allTouched = false`); the argument after
-`statType` (or after `band` in `RS_ZonalStatsAll`) is `allTouched`.
+`statType` (or after `band` in `RS_ZonalStatsAll`) is `allTouched`. Verified 2026-10-08: a
+1.8 x 1.8-cell square over a 1-cell grid counts 1 cell centroid-in and 9 cells all-touched.
+Record the rule in a `boundary_rule` column or the manifest.
 
 | | Centroid-in (default) | All-touched |
 |---|---|---|
@@ -181,7 +187,8 @@ RASTER_EPSG = 32610  # from RS_SRID, not assumed
 VECTOR_EPSG = 4269   # from ST_SRID; retag with ST_SetSRID before ST_Transform
 SCALE, OFFSET, NODATA = 10000.0, 0.0, 0   # verified on a known target on <date>
 TILE = 1024          # = COG block size from RS_MetaData
-ZONAL_ALL_TOUCHED = False  # boundary rule, decided with the analyst (item 8)
+ZONAL_ALL_TOUCHED = False  # boundary rule, decided with the analyst (item 8); unattended default
+MIN_PX = 10          # zonal rows with fewer cells get reliable = False (item 2)
 ```
 
 ## How the engine resamples (verified in source, 2026-09-30)

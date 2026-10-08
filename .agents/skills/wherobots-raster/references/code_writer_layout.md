@@ -44,7 +44,10 @@ def tile_name_expr(col: str, product: str, variant: str, cell: str) -> str:
 ```python
 from concurrent.futures import ThreadPoolExecutor
 
-from pyspark.sql import functions as F
+try:  # Spark-side helpers; the pure functions above still import without Spark
+    from pyspark.sql import functions as F
+except ImportError:
+    F = None
 
 
 def flatten_written_tiles(sedona, tiles_dir: str, threads: int = 32, dry_run: bool = False) -> dict:
@@ -114,8 +117,11 @@ def rewrite_index_paths(sedona, index_dir: str, tiles_dir: str, path_col: str = 
     Writes to <index_dir>_flat, then swaps it in place of <index_dir>."""
     idx = sedona.read.format("geoparquet").load(index_dir)
     base = tiles_dir.rstrip("/") + "/"
-    new = idx.withColumn(path_col, F.concat(F.lit(base), F.element_at(F.split(F.col(path_col), "/"), -1))).cache()
+    new = idx.withColumn("_new", F.concat(F.lit(base), F.element_at(F.split(F.col(path_col), "/"), -1))).cache()
     n = new.count()
+    if new.where(F.col("_new") != F.col(path_col)).limit(1).count() == 0:
+        return n                     # already pointing at the flat folder: a true no-op on rerun
+    new = new.withColumn(path_col, F.col("_new")).drop("_new")
     tmp = index_dir.rstrip("/") + "_flat"
     new.write.format("geoparquet").mode("overwrite").save(tmp)
     jvm = sedona.sparkContext._jvm

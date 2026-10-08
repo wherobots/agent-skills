@@ -141,6 +141,16 @@ value; see the cross-file section for why). Three cases:
 
 ## Cross-file halo: neighbour files from the reader's own catalogue
 
+Requirement: the neighbour files must share pixel size **and** alignment (same grid).
+`_halo_window` raises on a pixel-size mismatch but rounds a sub-pixel origin shift silently, so
+check alignment yourself (the probe's `ul_frac_px` must agree across files). Files on different grids (mixed resolutions, a
+different UTM zone, shifted origins): resample them onto one grid or build a mosaic first, then
+halo (*untested*). Pixel registration varies by source (Copernicus GLO-30 origins sit half a
+pixel off the degree lines: UL -122.000139, not -122); everything here works from each file's
+geotransform, so tile names and seam masks follow the real corner.
+
+The measured example below is a Copernicus 4-file corner; the method is generic.
+
 Load the whole prefix with the raster reader (glob; missing all-ocean cells are skipped), then a
 spatial self-join of tile envelopes gives each tile the other files its padded window touches.
 The UDF reads its own file with NaN fill, then only the overlapping strip of each neighbour.
@@ -184,18 +194,32 @@ the written files: max 0.0). Gotchas found on the way:
 Every merged raster therefore has a valid outer ring only where the source
 file continued beyond the AOI; the seam checks exclude the outer ring for that reason.
 
-## How to verify
+## How to verify (always with a negative control)
 
-1. **Single-pass ground truth on a subset.** Rectangle-clip a small AOI (a few thousand cells
-   on a side), `RS_AsInDB` it, `collect()` once, compute the same function in one pass on the
-   driver with the pure numpy functions, and compare against the mosaic of the tiled UDF
-   output. Expect float32 rounding (1e-2 deg for slope) and nothing else.
-   Print the per-row max difference for the eight rows around a seam.
-2. **Seam mask.** Build a boolean mask of the two rows/cols either side of every tile boundary
-   and report max/mean difference on and off the mask. Off-seam must be exactly 0 between halo and no-halo
-   variants; on-seam is your error budget.
-3. **Diff raster.** Write `|halo - nohalo|` as its own tile set and merged COG (`tiles_diff`,
-   `merged_diff_cog`); anything non-zero away from seams is a bug in the halo read (wrong
-   `col0/row0` rounding, wrong band index).
-4. **Statistics**: compare the two-pass global statistic against `esda` on the collected
-   subset; expect agreement to 1e-10 or better in float64.
+A check that cannot fail proves nothing: on flat terrain, or a subset that misses the seams, a
+broken pipeline also scores 0. Every verification therefore runs two comparisons on the **same**
+subset and passes only if both hold:
+
+- the pipeline output matches a single pass over the merged source (within float32 rounding:
+  about 1e-2 deg for slope; stencils without trigonometry match exactly);
+- a known-bad variant (no halo, or per-file halo) shows a **non-zero** error on the seams.
+
+`single_pass_check` in `code_pipeline.md` does both. It stitches the source files by their own
+geotransforms (so half-pixel origins need no special handling), computes the single pass on the
+driver, reads the written tiles back, builds the seam mask from the file edges, and computes the
+per-file control. Pick a subset that straddles the seams **and has relief**; the function reports
+`check_discriminates = False` when the control cannot fail there.
+
+*Measured example:* per-file halo with 0-fill on a source without a nodata tag gave 82.6 deg fake
+cliffs on the file seams; the neighbour halo gave 0.0 (2026-10-05). Unit test on synthetic
+2 x 2 files (2026-10-08): correct output 0.0 vs single pass, per-file control 12.5 deg on seams,
+per-file output FAILS, flat surface reports `check_discriminates = False`.
+
+Further checks:
+
+1. **Per-row profile.** Print the max difference for the eight rows around a seam: a halo bug
+   shows as a spike on exactly the seam rows.
+2. **Diff raster.** Write `|halo - nohalo|` as its own tile set; anything non-zero away from
+   seams is a bug in the halo read (wrong `col0/row0` rounding, wrong band index).
+3. **Statistics**: compare a two-pass global statistic against `esda` on the collected subset;
+   expect agreement to 1e-10 or better in float64.

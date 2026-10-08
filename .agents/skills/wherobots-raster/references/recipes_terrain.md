@@ -2,7 +2,7 @@
 
 All code is in `code_terrain_focal.md` (pure numpy/scipy functions, unit-tested locally on
 synthetic surfaces, 14 checks) and `code_sedona_udfs.md` (`@sedona_vectorized_udf` wrappers that
-exist only when the Sedona runtime imports). Job runs upload one script, so paste both above
+exist only when the Sedona runtime imports). Job runs upload one script: paste the `code_*` blocks in the order SKILL.md gives, then
 your driver.
 
 Conventions shared by every recipe:
@@ -22,33 +22,46 @@ Conventions shared by every recipe:
   GDAL default). `tpi`, `focal_stat`, `roughness` ignore NaN inside the window instead.
 - Halo: the number of cells `read_with_halo` must pad on every side (`HALO` dict in the module).
 
-## Recommended pipeline (fastest measured, exact)
+## Generic focal pipeline (fastest measured, exact)
 
-For any terrain or focal product from one file or many (Copernicus GLO-30, 3DEP, merged COGs).
-Every choice below was measured on 2026-10-05 against its alternative on the **same cluster**
-(`small` runtime scaled to 32 cores, two repeats in ABAB order,
-outputs bit-identical before any timing counted), plus California at scale
-(66 files, 620 M cells, seams 0.0 deg vs single pass at 3 corners).
+For any focal or terrain product from one file or many files sharing one grid. Slope is the
+worked example; the code is `code_pipeline.md` (`files_for_aoi`, `focal_tiles`, `run_focal`,
+`build_tile_index`, `write_manifest`, `single_pass_check`) and its "Driver skeleton" runs as
+pasted. The steps:
 
-```python
-from pyspark.sql import functions as F
-RES = 1 / 3600                                                     # source pixel size (degrees here)
-# Source: the catalog table as a FILE INDEX (fast lookup, no S3 listing), re-tiled to 2048 px.
-names = [f"Copernicus_DSM_COG_10_N{la:02d}_00_W{abs(lo):03d}_00_DEM.tif" for la in lats for lo in lons]
-paths = (sedona.table("wherobots_open_data.copernicus_dem.glo_30m").where(F.col("name").isin(names))
-         .select(F.regexp_replace(F.expr("RS_BandPath(rast)"), "^s3://", "s3a://").alias("p")).distinct())
-tiles = paths.selectExpr("RS_TileExplode(RS_FromPath(p), 2048, 2048) AS (x, y, rast)")
-# (no catalog for your DEM? glob the bucket instead:
-#  sedona.read.format("raster").option("tileWidth", "2048").option("tileHeight", "2048").load("s3a://.../*.tif"))
-tiles = with_neighbour_files(tiles, pad_deg=2 * RES)               # halo 1 cell, doubled for safety; path (RS_BandPath) + neighbours
-tiles = tiles.repartition(max(n_tiles // 8, cores * 3))            # by tile count: the runtime autoscales
-out = (tiles.selectExpr("path", "x", "y", empty_template_sql("rast"), "rast", "neighbours")
-       .select("path", "x", "y", slope_nb_udf(F.col("t"), F.col("rast"), F.col("neighbours")).alias("r"))
-       .selectExpr("path", "x", "y", "RS_SetBandNoDataValue(r, 1, CAST('NaN' AS DOUBLE)) AS r"))
-(out.selectExpr("RS_AsCOG(r) AS raster_binary", "<unique name expr> AS path")
-    .write.format("raster").option("rasterField", "raster_binary").option("pathField", "path")
-    .option("fileExtension", ".tif").save(out_dir))
-```
+1. **Parameters in one block**: source (`files_for_aoi` kind: catalog names, catalog footprint,
+   glob, or path list), AOI, `TILE_PX`, operation, product/variant/cell for names, output path.
+2. **Select files** with `files_for_aoi`. It asserts a non-empty result: a name filter that
+   matches nothing returns 0 rows silently. Naming rules are source-specific
+   (`copernicus_glo30_names` is the example: files named by their SW corner, names include `.tif`).
+   Pad the AOI by the halo before deriving names, so an AOI edge on a file line pulls the neighbour.
+3. **Tile** with `focal_tiles`: out-db tiles at `TILE_PX`, neighbour files for the halo,
+   partitions from the tile count (computed, not assumed).
+4. **Compute and write** with `run_focal`: empty template + the operation's UDF, nodata set,
+   names from `tile_name_expr`, **persisted** before the write so the UDF runs once.
+5. **Index from the written files** with `build_tile_index` (full paths, footprints, valid
+   counts; reading every tile back is also the "opens" check), then `write_manifest`.
+6. **Verify** with `single_pass_check` on a seam-straddling subset with relief: PASS needs the
+   output to match a single pass **and** the per-file negative control to fail on the seams.
+
+What changes per operation:
+
+| Operation | UDF (code_sedona_udfs.md) | Halo | Output | Nodata |
+|-----------|---------------------------|------|--------|--------|
+| slope | `slope_nb_udf` | 1 | float32, degrees | NaN |
+| slope + aspect + hillshade | `terrain_nb_udf` | 1 | 3 x float32 | NaN |
+| TPI radius r | `tpi_udf(t, tile, F.lit(r))` (single file) | r | float32, metres | NaN |
+| focal mean n x n | `focal_mean_udf(t, tile, F.lit(n))` (single file) | n // 2 | float32 | NaN |
+| landforms (two-pass) | `tpi_moments_nb_udf` then `landform_nb_udf` | max(r1, r2) | uint8 classes | 0 |
+
+TPI and focal mean have only single-file wrappers: for a source split over files, copy
+`slope_nb_udf` and swap the function, keeping `read_with_halo(..., neighbours=...)`.
+
+Every choice below was measured on 2026-10-05 against its alternative on the same cluster
+(`small` runtime scaled to 32 cores, two repeats in ABAB order, outputs bit-identical before any
+timing counted), plus California at scale (66 files, 620 M cells, seams 0.0 deg vs single pass at
+3 corners). The naive-user test on 2026-10-07 reproduced the slope result on a 4-file corner:
+0.000000 deg vs single pass.
 
 | Choice | Measured alternative | Result |
 |--------|----------------------|--------|
@@ -64,11 +77,10 @@ out = (tiles.selectExpr("path", "x", "y", empty_template_sql("rast"), "rast", "n
 | Partitions from the tile count | from start-up cores | CA runs started on 8 to 24 cores; a cores-based count caps an autoscaled cluster |
 | `RS_AsCOG` + distributed writer | | encoding costs less than one extra Python pass; not the bottleneck |
 
-Best combination (2048 px + empty template) against the previous default (1024 px + `RS_AsInDB`):
-roughly **4x** the throughput on 32 cores (per-run cell counts differed between the comparisons, so
-treat the ratios as indicative and measure your own). Untested: tiles larger than 2048 px
-(a 3600-px file in one tile), the empty template with multi-band outputs (with_bands replaced the
-1-band template with 3 bands for `terrain_nb_udf` under `RS_AsInDB`; not yet under the empty template).
+Best combination (2048 px + empty template) against the earlier default (1024 px +
+`RS_AsInDB`): roughly **4x** the throughput on 32 cores (per-run cell counts differed between
+comparisons; treat the ratios as indicative). Untested: tiles larger than 2048 px, the empty
+template with multi-band outputs.
 
 ## The call pattern (all recipes)
 
@@ -80,7 +92,7 @@ out = base.select("x", "y", terrain_udf(F.col("t"), F.col("tile")).alias("terrai
 out.selectExpr("x", "y", "RS_SummaryStats(terrain, 'mean', 1) AS mean_slope").show()
 ```
 
-(Older pattern, still correct, 1.7x slower: see "Recommended pipeline".) `RS_AsInDB(tile)` makes
+(Older single-file pattern with `RS_AsInDB(tile)` as the template: still correct, about 1.7x slower than the empty template.) `RS_AsInDB(tile)` makes
 the JVM read the tile once and hand it to Python as the georeferencing template for `with_bands()`. The out-db `tile` carries path + window; the
 UDF reads that window plus the halo through rasterio. Scalar parameters (radius, window
 size) are passed as `F.lit(...)` columns. Column API only; the UDF cannot be called from a
@@ -91,7 +103,7 @@ SELECT RS_TileExplode(RS_Clip(RS_FromPath('<dem>'), 1, ST_GeomFromText('<rect>',
 ```
 
 which reads nothing (rectangle in the DEM CRS keeps the clip out-db). Set nodata on any
-result you keep: `RS_SetBandNoDataValue(r, CAST('NaN' AS DOUBLE))`.
+result you keep: `RS_SetBandNoDataValue(r, 1, CAST('NaN' AS DOUBLE))`.
 
 ## Slope (Horn 1981)
 

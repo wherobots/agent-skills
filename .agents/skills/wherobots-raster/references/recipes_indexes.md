@@ -6,7 +6,7 @@ Convert digital numbers first with `s2_reflectance(dn, scale, offset, nodata)` a
 units check below. Local tests cover every function on scalar inputs; the cluster runs
 covered NDVI (scene, per field, points) and NDMI (10 m vs 20 m grids), and the validation job
 (2026-09-30) ran `ndvi_raster_udf`, `ndvi_sum_count_udf`
-and `ndmi_from_stack_udf` from `code_sedona_udfs.md` on 2 tiles: raster-path and
+and `ndmi_from_stack_udf` from `code_index_udfs.md` on 2 tiles: raster-path and
 scalar-path NDVI means agree to 9.5e-9 (0.303117 over 2,097,149 valid px), NDMI from the
 stack in range with 1,048,574 valid px per tile (33.7 s including the stack read). Everything
 else is **untested on the cluster** and is arithmetic on the same call pattern.
@@ -59,7 +59,12 @@ reference band's grid with nearest neighbour; refIdx 0 = 10 m grid (tile 1024), 
 different-resolution bands into one UDF row with matching shapes without writing your own
 resampler; it costs one JVM copy per tile (32 to 41 s vs 25 s no-stack for a 3-band scene).
 
-## Units check (do this once per collection, on a known target)
+## Units check (once per source, on known targets)
+
+The generic procedure, acceptance ranges per target type and the failure signatures are in
+`loading_units_patterns.md` ("Units check"). Rule: read the file's scale/offset tags with the
+probe; SQL and UDF reads can differ; verify on targets chosen by what is on the ground. The table
+below is **examples** of what that check found per source:
 
 | Source | Tags in file | SQL functions return | `as_numpy()` on out-db returns | Use |
 |--------|--------------|----------------------|--------------------------------|-----|
@@ -67,11 +72,10 @@ resampler; it costs one JVM copy per tile (32 to 41 s vs 25 s no-stack for a 3-b
 | Earth Search `sentinel-2-c1-l2a` | scale 0.0001, offset -0.1 | reflectance as doubles (4x memory) | DN | in SQL never re-apply; in a UDF apply scale/offset yourself or pass `RS_AsInDB(tile)` so the UDF receives rescaled values |
 | NAIP quads | none | uint8 DN | uint8 DN | ratios only; `red + nir = 0` is the collar (nodata) |
 
-Sanity: vegetation red 0.03-0.08, NIR 0.3-0.5, NDVI 0.6-0.9; water NDVI < 0. If every field
-comes out at NDVI 1.0, an offset was applied that the file does not need (*measured*
-failure, corrected 2026-09-27). `s2_reflectance(dn, scale=10000.0, offset=0.0, nodata=0)`
-is the module default; the UDFs use `S2_SCALE`, `S2_OFFSET` module constants (edit them, or
-the inlined copy, per collection).
+If every polygon comes out at NDVI 1.0, an offset was applied that the file does not need
+(*measured* failure, corrected 2026-09-27). `s2_reflectance(dn, scale=10000.0, offset=0.0, nodata=0)`
+is the module default; the UDFs use the `S2_SCALE`, `S2_OFFSET` constants in `code_index_udfs.md`
+(example values: set them per source).
 
 ## Cloud masking with SCL
 
@@ -84,24 +88,29 @@ grid with `refIdx` pointing at `scl`. Untested on the cluster; the class table i
 the mask function is unit-tested. Filter scenes first by `eo:cloud_cover` in the items table
 so most tiles need no mask at all.
 
-## Call pattern 1: raster out (in-db template + out-db bands)
+## Call pattern 1: raster out (empty template + out-db bands)
 
 ```python
 from pyspark.sql import functions as F
+
+SCENE_ID = "S2A_10SFH_20240722_0_L2A"          # EXAMPLE scene; pick yours by footprint and eo:cloud_cover
+AOI_WKT = "POLYGON((-120.4 36.5, -120.1 36.5, -120.1 36.8, -120.4 36.8, -120.4 36.5))"   # EXAMPLE, EPSG:4326
 scene = sedona.sql(f"""
   SELECT RS_FromPath(assets.red.href) AS red, RS_FromPath(assets.nir.href) AS nir
   FROM wherobots_open_data.sentinel2.l2a_source_items WHERE id = '{SCENE_ID}'""")
 red_t = scene.selectExpr("RS_TileExplode(red, 1024, 1024) AS (x, y, red)")
 nir_t = scene.selectExpr("RS_TileExplode(nir, 1024, 1024) AS (x, y, nir)")
-tiles = red_t.join(nir_t, ["x", "y"]).where(f"RS_Intersects(red, ST_GeomFromText('{AOI}', 4326))")
+tiles = red_t.join(nir_t, ["x", "y"]).where(f"RS_Intersects(red, ST_GeomFromText('{AOI_WKT}', 4326))")
 
-ndvi_tiles = (tiles.selectExpr("x", "y", "RS_AsInDB(red) AS red_indb", "nir")
-              .select("x", "y", ndvi_raster_udf(F.col("red_indb"), F.col("nir")).alias("ndvi"))
-              .selectExpr("x", "y", "RS_SetBandNoDataValue(ndvi, CAST('NaN' AS DOUBLE)) AS ndvi"))
+ndvi_tiles = (tiles.selectExpr("x", "y", empty_template_sql("red"), "red", "nir")
+              .select("x", "y", ndvi_outdb_udf(F.col("t"), F.col("red"), F.col("nir")).alias("ndvi"))
+              .selectExpr("x", "y", "RS_SetBandNoDataValue(ndvi, 1, CAST('NaN' AS DOUBLE)) AS ndvi"))
 ```
 
-One JVM read (the template), one rasterio window read (NIR), one output band. *Measured*
-24 s for a 121-tile scene, 13 to 27 s for 6 tiles including warm-up. For a
+No JVM pixel copy: two rasterio window reads, one output band. `ndvi_outdb_udf` is *untested on
+the cluster*; the validated predecessor `ndvi_raster_udf(RS_AsInDB(red), nir)` (one JVM read for
+the template) measured 24 s for a 121-tile scene, and the empty template measured about 40 %
+faster for the terrain UDFs. For a
 three-band index (EVI, BSI) add more out-db columns; for a mixed-resolution index use
 `RS_StackTileExplode` and a stack UDF such as `ndmi_from_stack_udf` (band order = array order).
 
@@ -122,15 +131,16 @@ Per polygon: `ndvi_sum_count_in_polygon_udf(red_win, nir_win, geom_r)` on bbox w
 
 ```python
 @sedona_vectorized_udf(return_type=RasterType())
-def evi_raster_udf(red_indb: SedonaRaster, nir: SedonaRaster, blue: SedonaRaster) -> SedonaRaster:
-    r = s2_reflectance(red_indb.as_numpy()[0], S2_SCALE, S2_OFFSET)
+def evi_raster_udf(template: SedonaRaster, red: SedonaRaster, nir: SedonaRaster, blue: SedonaRaster) -> SedonaRaster:
+    r = s2_reflectance(red.as_numpy()[0], S2_SCALE, S2_OFFSET)
     n = s2_reflectance(nir.as_numpy()[0], S2_SCALE, S2_OFFSET)
     b = s2_reflectance(blue.as_numpy()[0], S2_SCALE, S2_OFFSET)
-    return red_indb.with_bands(evi(n, r, b)[np.newaxis])
+    return template.with_bands(evi(n, r, b)[np.newaxis])
 ```
 
 Annotate every raster argument with `SedonaRaster` and geometry arguments with
-`BaseGeometry`; the first argument must be the in-db template when a raster comes out;
+`BaseGeometry`; when a raster comes out, the first argument is the template (the empty
+template from `empty_template_sql`, called as `evi_raster_udf(F.col("t"), F.col("red"), F.col("nir"), F.col("blue"))`);
 `with_bands` takes a CHW array of any band count and dtype but the same H x W.
 
 ## Ratio indexes and zonal statistics: index first, then aggregate
