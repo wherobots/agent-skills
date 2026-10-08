@@ -50,8 +50,9 @@ is DataFrame-only (``FROM raster.`path` `` fails) and needs `s3a://`, not https.
 
 1. **Read the file's tags** with the probe; never infer units from STAC metadata or a collection
    name. SQL on `RS_FromPath` applies tags; out-db UDF reads return raw DN.
-2. **Convert** with the scale/offset you decided (`s2_reflectance(dn, scale, offset, nodata)` is
-   generic despite its name).
+2. **Convert** with the scale/offset you decided: `s2_reflectance(dn, scale, offset, nodata)` computes
+   `dn * scale + offset` (the convention the tags use; generic despite its name). In-db inputs on a
+   tagged source are already scaled: set `INDB_IS_REFLECTANCE` in `code_index_udfs.md`.
 3. **Verify on known targets chosen by what is on the ground**, not by a land-use label: a
    land-cover layer class (forest, open water, barren), or a stated spectral pre-filter. A land-use
    polygon is not a cover label: Overture `orchard` polygons in July had median NDVI 0.63 because

@@ -15,12 +15,13 @@ import numpy as np
 # All functions take reflectance arrays (0..1 floats, nodata NaN) unless noted. Outputs float32.
 
 
-def s2_reflectance(dn, scale=10000.0, offset=0.0, nodata=0):
-    """Digital numbers -> reflectance. VERIFY scale/offset on a known target first:
-    sentinel-cogs (wherobots_open_data.sentinel2) files: DN / 10000, no offset, DN 0 = nodata.
-    Earth Search Collection-1 files carry tags; SQL functions rescale them, as_numpy() does not."""
+def s2_reflectance(dn, scale=0.0001, offset=0.0, nodata=0):
+    """Digital numbers -> physical values with the GDAL tag convention: value = dn * scale + offset
+    (the scale/offset a file's tags report, e.g. 0.0001 and -0.1). Generic despite the name.
+    VERIFY on known targets first. Example: sentinel-cogs files carry no tags and need scale 0.0001,
+    offset 0 (DN / 10000); applying an offset they do not need saturates NDVI at 1.0."""
     dn = np.asarray(dn)
-    v = (dn.astype(np.float32) - offset) / scale
+    v = dn.astype(np.float64) * scale + offset
     return np.where(dn == nodata, np.nan, v).astype(np.float32)
 
 

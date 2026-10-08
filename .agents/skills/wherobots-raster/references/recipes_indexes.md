@@ -69,12 +69,13 @@ below is **examples** of what that check found per source:
 | Source | Tags in file | SQL functions return | `as_numpy()` on out-db returns | Use |
 |--------|--------------|----------------------|--------------------------------|-----|
 | `sentinel-cogs/sentinel-s2-l2a-cogs` (what `wherobots_open_data.sentinel2` links to) | none | DN | DN | `DN / 10000`, no offset, DN 0 = nodata (*measured*: lush field red DN ~550, NIR ~5800) |
-| Earth Search `sentinel-2-c1-l2a` | scale 0.0001, offset -0.1 | reflectance as doubles (4x memory) | DN | in SQL never re-apply; in a UDF apply scale/offset yourself or pass `RS_AsInDB(tile)` so the UDF receives rescaled values |
+| Earth Search `sentinel-2-c1-l2a` | scale 0.0001, offset -0.1 | reflectance as doubles (4x memory) | DN | in SQL never re-apply; out-db UDF inputs: `s2_reflectance(dn, 0.0001, -0.1)`; in-db inputs are already scaled: `INDB_IS_REFLECTANCE = True` |
 | NAIP quads | none | uint8 DN | uint8 DN | ratios only; `red + nir = 0` is the collar (nodata) |
 
 If every polygon comes out at NDVI 1.0, an offset was applied that the file does not need
-(*measured* failure, corrected 2026-09-27). `s2_reflectance(dn, scale=10000.0, offset=0.0, nodata=0)`
-is the module default; the UDFs use the `S2_SCALE`, `S2_OFFSET` constants in `code_index_udfs.md`
+(*measured* failure, corrected 2026-09-27). `s2_reflectance(dn, scale=0.0001, offset=0.0, nodata=0)` (value = dn * scale + offset,
+the GDAL tag convention) is the module default; set `INDB_IS_REFLECTANCE = True` when the source has
+tags, so in-db inputs (already scaled by SQL) are not converted twice; the UDFs use the `S2_SCALE`, `S2_OFFSET` constants in `code_index_udfs.md`
 (example values: set them per source).
 
 ## Cloud masking with SCL

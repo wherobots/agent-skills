@@ -185,7 +185,7 @@ GRID_M = 10          # target grid, decided by object size (item 2)
 RESAMPLE = "nearest" # analysis; 'average' only when downsampling continuous data
 RASTER_EPSG = 32610  # from RS_SRID, not assumed
 VECTOR_EPSG = 4269   # from ST_SRID; retag with ST_SetSRID before ST_Transform
-SCALE, OFFSET, NODATA = 10000.0, 0.0, 0   # verified on a known target on <date>
+SCALE, OFFSET, NODATA = 0.0001, 0.0, 0   # value = dn * SCALE + OFFSET; verified on known targets on <date>
 TILE = 1024          # = COG block size from RS_MetaData
 ZONAL_ALL_TOUCHED = False  # boundary rule, decided with the analyst (item 8); unattended default
 MIN_PX = 10          # zonal rows with fewer cells get reliable = False (item 2)

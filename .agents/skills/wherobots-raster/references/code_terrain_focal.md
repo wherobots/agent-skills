@@ -127,13 +127,15 @@ def hillshade(z, dx, dy, azimuth=315.0, altitude=45.0, z_factor=1.0):
 
 def hillshade_multidirectional(z, dx, dy, altitude=45.0, z_factor=1.0, azimuths=(225.0, 270.0, 315.0, 360.0)):
     """Mark (1992) multidirectional hillshade as in gdaldem -multidirectional: four suns weighted by
-    sin^2(aspect - azimuth). Flat cells get the plain mean. Untested against gdaldem output."""
+    sin^2(aspect - azimuth), both in one angle convention. Flat cells get the plain mean.
+    Untested against gdaldem output."""
     dzdx, dzdy = horn_gradient(z, dx, dy)
     asp = _aspect_rad(dzdx * z_factor, dzdy * z_factor)
     num = np.zeros_like(asp, dtype=np.float64)
     den = np.zeros_like(asp, dtype=np.float64)
     for az in azimuths:
-        w = np.sin(asp - math.radians(az)) ** 2
+        az_math = math.radians((360.0 - az + 90.0) % 360.0)   # compass -> the math convention _aspect_rad uses
+        w = np.sin(asp - az_math) ** 2
         num += w * hillshade(z, dx, dy, az, altitude, z_factor)
         den += w
     flat = den < 1e-12

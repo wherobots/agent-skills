@@ -73,29 +73,38 @@ def copernicus_glo30_names(xmin, ymin, xmax, ymax):
 # What changes per operation (UDFs in code_sedona_udfs.md; all output float32 with NaN nodata
 # except landform classes, uint8 with 0 nodata).
 FOCAL_OPS = {
-    "slope":   {"udf": "slope_nb_udf",   "halo": 1, "bands": "slope_deg"},
-    "terrain": {"udf": "terrain_nb_udf", "halo": 1, "bands": "slope_deg;aspect_deg;hillshade"},
+    "slope":   {"udf": "slope_nb_udf",   "halo": 1, "n_bands": 1, "bands": "slope_deg"},
+    "terrain": {"udf": "terrain_nb_udf", "halo": 1, "n_bands": 3, "bands": "slope_deg;aspect_deg;hillshade"},
 }
 
 
-def focal_tiles(sedona, paths, tile_px: int, halo: int):
-    """Out-db tiles of `paths` at tile_px, each with the neighbour files its halo needs, partitioned by
-    tile count (the runtime autoscales, so start-up cores undercount)."""
+def focal_tiles(sedona, paths, tile_px: int, halo: int, aoi_wkt: str = None, aoi_srid: int = 4326):
+    """Out-db tiles of `paths` at tile_px that meet the AOI, each with the neighbour files its halo
+    needs, partitioned by tile count (the runtime autoscales, so start-up cores undercount).
+    Neighbours are found over ALL tiles of the files before the AOI filter, so a tile at the AOI edge
+    still gets the neighbour file just outside it."""
     tiles = (sedona.createDataFrame([(p,) for p in paths], ["p"])
              .selectExpr(f"RS_TileExplode(RS_FromPath(p), {tile_px}, {tile_px}) AS (x, y, rast)"))
     px = abs(tiles.selectExpr("RS_ScaleX(rast) AS s").first()["s"])
-    tiles = with_neighbour_files(tiles, pad_deg=2 * (halo + 1) * px).cache()   # pad in the raster CRS units
+    tiles = with_neighbour_files(tiles, pad_deg=2 * (halo + 1) * px)   # pad in the raster CRS units
+    if aoi_wkt:
+        tiles = tiles.where(F.expr(f"RS_Intersects(rast, ST_GeomFromText('{aoi_wkt}', {aoi_srid}))"))
+    tiles = tiles.cache()
     n_tiles = tiles.count()
+    assert n_tiles > 0, "focal_tiles: no tiles meet the AOI"
     cores = int(sedona.sparkContext.defaultParallelism)
     return tiles.repartition(max(n_tiles // 8, cores * 3)), n_tiles
 
 
-def run_focal(sedona, tiles, udf, product: str, variant: str, cell: str, tiles_dir: str):
+def run_focal(sedona, tiles, udf, product: str, variant: str, cell: str, tiles_dir: str, n_bands: int = 1):
     """Compute, set nodata, name, PERSIST (so the write and the index do not run the UDF twice), write COGs.
     The index is then built from the written files (build_tile_index), which also proves they open."""
+    nodata = "r"
+    for b in range(1, n_bands + 1):                   # every band, or NaN in bands 2+ is not nodata
+        nodata = f"RS_SetBandNoDataValue({nodata}, {b}, CAST('NaN' AS DOUBLE))"
     out = (tiles.selectExpr("path", "x", "y", empty_template_sql("rast"), "rast", "neighbours")
            .select("path", "x", "y", udf(F.col("t"), F.col("rast"), F.col("neighbours")).alias("r"))
-           .selectExpr("path", "x", "y", "RS_SetBandNoDataValue(r, 1, CAST('NaN' AS DOUBLE)) AS r")
+           .selectExpr("path", "x", "y", f"{nodata} AS r")
            .withColumn("tile_name", F.expr(tile_name_expr("r", product, variant, cell)))
            .persist())
     n = out.select(F.count("r")).collect()[0][0]      # count(col): df.count() would prune the UDF
@@ -297,8 +306,9 @@ SOURCE = {"kind": "catalog_names", "table": "wherobots_open_data.copernicus_dem.
 OP, TILE_PX, PRODUCT, VARIANT, CELL = "slope", 2048, "slope", "halo", "30m"
 
 paths = files_for_aoi(sedona, SOURCE, AOI_WKT)
-tiles, n_tiles = focal_tiles(sedona, paths, TILE_PX, FOCAL_OPS[OP]["halo"])
-out, n = run_focal(sedona, tiles, globals()[FOCAL_OPS[OP]["udf"]], PRODUCT, VARIANT, CELL, TILES_DIR)
+tiles, n_tiles = focal_tiles(sedona, paths, TILE_PX, FOCAL_OPS[OP]["halo"], AOI_WKT)
+out, n = run_focal(sedona, tiles, globals()[FOCAL_OPS[OP]["udf"]], PRODUCT, VARIANT, CELL, TILES_DIR,
+                   n_bands=FOCAL_OPS[OP]["n_bands"])
 rows = build_tile_index(sedona, TILES_DIR, INDEX_DIR, bands=FOCAL_OPS[OP]["bands"])
 assert rows == n, f"index has {rows} files, computed {n} tiles"
 write_manifest(sedona, MANIFEST, {"product": PRODUCT, "variant": VARIANT, "op": OP, "halo_cells": FOCAL_OPS[OP]["halo"],

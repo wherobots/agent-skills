@@ -30,6 +30,7 @@ Trade-off to know:
 ```python
 import contextlib
 import math
+import types
 import warnings
 
 import numpy as np
@@ -291,19 +292,26 @@ if HAVE_SEDONA:
         return template.with_bands(cls[np.newaxis].astype(np.uint8))
 
 def mosaic(df, col):
-    """Paste in-db tiles (columns x, y, <col>) into one CHW float32 array on the DRIVER by tile offsets.
-    Exact when tiles were computed with a halo. Returns (array, top-left affine_trans, crs_wkt).
-    Small areas only: the whole mosaic lives in driver memory."""
-    rows = df.select("x", "y", col).collect()
-    rs = [(r["x"], r["y"], r[col]) for r in rows]
-    xs, ys = sorted({x for x, _, _ in rs}), sorted({y for _, y, _ in rs})
-    wid = {x: next(r.width for xx, _, r in rs if xx == x) for x in xs}
-    hei = {y: next(r.height for _, yy, r in rs if yy == y) for y in ys}
-    xoff = {x: sum(wid[i] for i in xs if i < x) for x in xs}
-    yoff = {y: sum(hei[i] for i in ys if i < y) for y in ys}
-    first = next(r for x, y, r in rs if x == xs[0] and y == ys[0])
-    out = np.full((len(first.bands_meta), sum(hei.values()), sum(wid.values())), np.nan, dtype=np.float32)
-    for x, y, r in rs:
-        out[:, yoff[y]:yoff[y] + r.height, xoff[x]:xoff[x] + r.width] = r.as_numpy()
-    return out, first.affine_trans, first.crs_wkt
+    """Paste in-db tiles (column <col>) into one CHW float32 array on the DRIVER by each tile's
+    GEOTRANSFORM: tiles from several source files have per-file x/y indices, which cannot place them.
+    Exact when tiles were computed with a halo. Returns (array, top-left affine, crs_wkt); the affine
+    has the scale_x/skew_x/ip_x/skew_y/scale_y/ip_y attributes. Small areas only (driver memory)."""
+    rasters = [r[col] for r in df.select(col).collect()]
+    at0 = rasters[0].affine_trans
+    sx, sy = at0.scale_x, at0.scale_y
+    for r in rasters:
+        a = r.affine_trans
+        assert abs(a.scale_x - sx) < 1e-12 and abs(a.scale_y - sy) < 1e-12 and a.skew_x == 0 and a.skew_y == 0, \
+            "mosaic: tiles are not on one unskewed grid"
+    ulx = min(r.affine_trans.ip_x for r in rasters)
+    uly = max(r.affine_trans.ip_y for r in rasters) if sy < 0 else min(r.affine_trans.ip_y for r in rasters)
+    width = max(int(round((r.affine_trans.ip_x - ulx) / sx)) + r.width for r in rasters)
+    height = max(int(round((r.affine_trans.ip_y - uly) / sy)) + r.height for r in rasters)
+    out = np.full((len(rasters[0].bands_meta), height, width), np.nan, dtype=np.float32)
+    for r in rasters:
+        c0 = int(round((r.affine_trans.ip_x - ulx) / sx))
+        r0 = int(round((r.affine_trans.ip_y - uly) / sy))
+        out[:, r0:r0 + r.height, c0:c0 + r.width] = r.as_numpy()
+    origin = types.SimpleNamespace(scale_x=sx, skew_x=0.0, ip_x=ulx, skew_y=0.0, scale_y=sy, ip_y=uly)
+    return out, origin, rasters[0].crs_wkt
 ```
