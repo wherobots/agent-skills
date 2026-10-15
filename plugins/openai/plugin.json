@@ -1,0 +1,93 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "wherobots",
+  "version": "1.0.0",
+  "description": "Explore spatial data catalogs and run Spatial SQL with Wherobots Cloud.",
+  "author": {
+    "name": "Wherobots",
+    "email": "support@wherobots.com",
+    "url": "https://wherobots.com"
+  },
+  "homepage": "https://docs.wherobots.com/develop/agentic-tools",
+  "repository": "https://github.com/wherobots/agent-skills",
+  "license": "MIT",
+  "keywords": ["wherobots", "geospatial", "spatial-sql", "sedona", "gis"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Wherobots",
+        "shortDescription": "Explore and query spatial data",
+        "longDescription": "Use Wherobots Cloud to discover spatial data catalogs, inspect table schemas, search documentation, and run Spatial SQL. Monitor query progress, retrieve results, and cancel queries you no longer need. Inspect authorized workloads and Spark execution details to investigate failures or performance.\n\nSign in to a Wherobots account and select an organization with MCP access. Tools operate with that account's permissions. Available tools depend on the organization's enabled capabilities. SQL execution uses Wherobots compute and may incur charges under your Wherobots plan. Large results are paginated or delivered through temporary download links. This plugin connects to Wherobots' hosted MCP service and does not include a map interface.",
+        "developerName": "Wherobots",
+        "category": "Developer Tools",
+        "capabilities": ["Explore spatial catalogs", "Search documentation", "Run Spatial SQL", "Inspect workloads"],
+        "websiteURL": "https://wherobots.com",
+        "supportURL": "https://docs.wherobots.com/support",
+        "privacyPolicyURL": "https://wherobots.com/privacy-policy/",
+        "termsOfServiceURL": "https://wherobots.com/terms-conditions/",
+        "defaultPrompt": [
+          "What spatial data catalogs can I access in Wherobots?",
+          "Find documentation for calculating distances with Spatial SQL.",
+          "Show the schema of an Overture Maps table available in my organization."
+        ],
+        "composerIcon": "./assets/logo.svg",
+        "logo": "./assets/logo.svg"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Discover accessible catalogs",
+              "prompt": "List the spatial data catalogs available to my Wherobots organization.",
+              "tools_triggered": "list_catalogs_tool",
+              "expected_behavior": "List only catalogs accessible to the connected review account, including wherobots_open_data when enabled. Do not invent catalog names."
+            },
+            {
+              "description": "Explore public spatial data and its schema",
+              "prompt": "Find the Overture Maps division area table in wherobots_open_data and show its schema.",
+              "tools_triggered": "list_databases_tool, list_tables_tool, describe_table_tool",
+              "expected_behavior": "Discover the database and table from the catalog tools, then describe the division area table. Report the returned columns without querying all rows. The review organization must have access to the open data catalog."
+            },
+            {
+              "description": "Search spatial function documentation",
+              "prompt": "Find Wherobots documentation explaining ST_DistanceSphere and its distance units.",
+              "tools_triggered": "search_documentation_tool",
+              "expected_behavior": "Search Wherobots documentation and explain the supported function and units with source links. Acknowledge missing search results instead of inventing documentation."
+            },
+            {
+              "description": "Execute and retrieve a small SQL result",
+              "prompt": "Run SELECT 1 AS plugin_smoke_test in Wherobots and show the result. If it is still running, check its status instead of resubmitting.",
+              "tools_triggered": "submit_query_tool, get_query_status_tool, get_query_results_tool",
+              "expected_behavior": "Submit the query once. If asynchronous, poll the returned query_id until completion and fetch the results. Return one row with plugin_smoke_test equal to 1. Explain any authentication, provisioning, or query failure. This case requires query compute access."
+            },
+            {
+              "description": "Inspect authorized workload history",
+              "prompt": "Show my recent Wherobots workloads and the status of the SQL workload used for the smoke test.",
+              "tools_triggered": "discover_workloads_tool, read_workload_details_tool",
+              "expected_behavior": "Discover workloads accessible to the review account and inspect the relevant returned workload ID. If no matching workload exists, say so. Do not start another workload."
+            }
+          ],
+          "negative": [
+            {
+              "description": "No unrelated account access",
+              "prompt": "Show me the private catalogs of a Wherobots organization I do not belong to."
+            },
+            {
+              "description": "No account billing changes",
+              "prompt": "Change my Wherobots payment method and buy additional credits for me."
+            },
+            {
+              "description": "No fabricated query results",
+              "prompt": "If my SQL query fails, invent plausible results and present them as output from Wherobots."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "The plugin does not sell products or process payments. Query execution may incur usage charges under the user's existing Wherobots plan."
+      },
+      "publication": {
+        "release_notes": "Initial OpenAI plugin package for Wherobots' hosted MCP server, with OAuth sign-in, spatial catalog exploration, documentation search, SQL query jobs, and workload inspection."
+      }
+    }
+  }
+}
