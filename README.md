@@ -58,38 +58,6 @@ Two constraints shape this layout. Cursor manifest paths cannot use parent trave
 
 Bump `version` in `plugin.json` for every marketplace submission. Cursor manually reviews each release.
 
-## OpenAI plugin package
-
-`plugins/openai/` contains a standalone Agent Plugins package for ChatGPT and
-Codex. It connects to the production MCP server through OAuth. The package
-contains the MCP connection, listing metadata, logo, and review test cases.
-It does not bundle the editor-focused skills above.
-
-Build the upload ZIP from the repository root:
-
-```bash
-mkdir -p dist
-cd plugins/openai
-zip -X ../../dist/wherobots-openai.zip plugin.json mcp.json assets/logo.svg LICENSE
-unzip -t ../../dist/wherobots-openai.zip
-```
-
-The OpenAI plugin workflow validates the package against the vendored
-[Agent Plugins 1.0.0 schemas](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json)
-and uploads the ZIP as a CI artifact. Refresh the packaged logo and license from
-the repository root when those files change.
-
-This package has not yet been approved for the public directory. Follow
-[OpenAI's submission guide](https://developers.openai.com/plugins/deploy/submission)
-to upload it under the verified Wherobots publisher, verify the MCP domain,
-select OAuth with automatic client registration, and scan the tools. The server
-advertises its OAuth endpoints through discovery; the ZIP contains no credentials
-or OAuth endpoint overrides. Before submitting, add a video walkthrough,
-dedicated reviewer credentials and sample data, country availability, and the
-tool annotation justifications in the portal. Keep credentials out of the ZIP.
-The included test cases describe expected behavior; run them against the
-reviewer account before submitting.
-
 ## Design Philosophy
 
 Every line in a skill must pass this test: **"Does this make the agent measurably more effective, or can the agent already discover this from `--help` / MCP tool descriptions?"**
