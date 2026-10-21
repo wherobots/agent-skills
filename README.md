@@ -34,7 +34,7 @@ Skills are bundled in the [Wherobots VS Code extension](https://marketplace.visu
 
 ### Via the Cursor marketplace
 
-This repository is also a Cursor plugin. Installing it registers the Wherobots MCP server and all three skills in one step, with no manual `.cursor/mcp.json` editing. Search for **Wherobots** in [Cursor's marketplace](https://cursor.com/marketplace).
+This repository is also a Cursor plugin. Installing it registers the Wherobots MCP server and all seven skills in one step, with no manual `.cursor/mcp.json` editing. Search for **Wherobots** in [Cursor's marketplace](https://cursor.com/marketplace).
 
 To install it before the listing is live:
 
@@ -57,6 +57,18 @@ The repository root is the plugin, so Cursor ships the same `SKILL.md` files tha
 Two constraints shape this layout. Cursor manifest paths cannot use parent traversal, so a plugin in a subdirectory could not reach `.agents/skills/`, which is why the plugin sits at the repo root. And `skills` is set explicitly to `.agents/skills` rather than Cursor's default `skills/` directory, because the [VS Code extension](https://github.com/wherobots/vs-code-extension) resolves skills from that path.
 
 Bump `version` in `plugin.json` for every marketplace submission. Cursor manually reviews each release.
+
+## Discovery index
+
+`.well-known/agent-skills/index.json` lists every skill in the [Agent Skills Discovery v0.2.0](https://github.com/cloudflare/agent-skills-discovery-rfc) format, with a sha256 digest of each `SKILL.md`. Sites that publish Wherobots skills for agents, such as wherobots.com, copy their entries from it.
+
+Rebuild it whenever you add, rename or edit a skill:
+
+```bash
+python3 scripts/build_discovery_index.py
+```
+
+CI runs the same script with `--check` and fails when the committed index does not match the skills.
 
 ## Design Philosophy
 
