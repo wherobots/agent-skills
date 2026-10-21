@@ -25,11 +25,19 @@ SCHEMA = "https://schemas.agentskills.io/discovery/0.2.0/schema.json"
 URL = "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/{}/SKILL.md"
 
 
+def read_frontmatter(text: str) -> str:
+    """Return the YAML between the opening and closing `---` lines, as validate.yml extracts it."""
+    lines = text.splitlines()
+    if not lines or lines[0] != "---" or "---" not in lines[1:]:
+        raise ValueError("SKILL.md must start with a --- frontmatter block")
+    return "\n".join(lines[1 : lines.index("---", 1)])
+
+
 def build() -> str:
     skills = []
     for skill_file in sorted(SKILLS_DIR.glob("*/SKILL.md")):
         raw = skill_file.read_bytes()
-        frontmatter = yaml.safe_load(raw.decode("utf-8").split("---")[1])
+        frontmatter = yaml.safe_load(read_frontmatter(raw.decode("utf-8")))
         skills.append(
             {
                 "name": frontmatter["name"],
