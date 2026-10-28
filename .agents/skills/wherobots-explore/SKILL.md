@@ -30,6 +30,6 @@ Skipping steps (e.g., querying before exploring the schema) will produce errors 
 
 ## Constraints
 
-- **Read-only by default**: `submit_read_query` refuses DDL (CREATE/DROP) and DML (INSERT/UPDATE/DELETE). `submit_write_query` runs writes but is listed only when enabled for you; if it is not listed, use the CLI or SDK.
-- **Result size**: a response holds about 16 KB of rows, and a larger result comes back `truncated`. Aggregate, filter, or select fewer columns rather than paging; `get_query_results` takes `offset` and `limit` when you do need to page.
+- **Read-only by default**: `submit_read_query` refuses writes such as CREATE TABLE, DROP, INSERT, UPDATE, and DELETE (`CREATE TEMPORARY VIEW` is allowed). `submit_write_query` runs writes but is listed only when enabled for you; if it is not listed, use the CLI or SDK.
+- **Result size**: a response holds about 16 KB of rows, and a larger result comes back `truncated`, or as a short-lived download URL when it is too large to read inline. Aggregate, filter, or select fewer columns rather than paging; `get_query_results` takes `offset` and `limit` when you do need to page.
 - **Scope limits**: the catalog, query, and documentation tools cannot submit job runs, manage workspaces, or modify infrastructure. Use the CLI or SDK for those tasks. Tools for Tasks, schedules, and My Files are listed only when enabled for you.

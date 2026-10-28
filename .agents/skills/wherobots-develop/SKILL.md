@@ -48,7 +48,7 @@ The `wherobots` CLI generates `wherobots api` subcommands from a live OpenAPI sp
 - `--json '<body>'` -- raw JSON request body for `api` commands; overrides the individual body field flags
 - `-q, --query key=value` -- add a query parameter to an `api` request (repeatable)
 
-`--output json` is not global: `job-runs` (`create`, `logs`, `list`, `metrics`) and `files ls` take it
+`--output json` is not global: `job-runs` (`create`, `logs`, `list`, `metrics`) and `files my-files ls` take it
 for machine-parseable output (default is human-readable text).
 
 **`--dry-run` is not an offline mode.** You still need credentials (a `wherobots auth login`

@@ -9,7 +9,7 @@ description: Use whenever working on any Wherobots task — provides the interfa
 
 | Task type                                                                      | Use                                                                                      | Why                                                          |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Data exploration, schema discovery, spatial Q&A in an AI chat session          | **MCP server**                                                                           | Interactive, read-only queries with catalog browsing         |
+| Data exploration, schema discovery, spatial Q&A in an AI chat session          | **MCP server**                                                                           | Interactive SQL, read-only by default, catalog browsing      |
 | Operational tasks: submit jobs, stream logs, check status, scripted automation | **`wherobots` CLI**                                                                      | Full lifecycle control, scriptable, supports `--output json` |
 | Programmatic access in notebooks, application code, or pipelines               | **Python SDK** (`wherobots-python-dbapi`) or **TypeScript SDK** (`wherobots-sql-driver`) | DB-API 2.0 / Arrow-based interfaces for integration          |
 | Visual exploration, billing, workspace management                              | **Wherobots Dashboard** (cloud.wherobots.com)                                            | GUI-only features like team management and billing           |
