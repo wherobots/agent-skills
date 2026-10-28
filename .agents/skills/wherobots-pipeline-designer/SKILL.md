@@ -53,7 +53,7 @@ validation invariants. Consult it when designing (below) and when auditing a gen
   When using `ST_KNN` on EPSG:4326 inputs, `use_sphere` **must be `TRUE`** or the radius is degrees.
 - **Cost is dominated by unbounded spatial joins.** Prefilter both sides to the AOI (bbox scalars /
   H3 / partition), keep distance thresholds tight, and size the runtime to the workload — the CLI
-  default `tiny` is too small for real spatial joins. Watch spend via the CLI's `api usage` group.
+  falls back to the org's default runtime, which may be too small for real spatial joins. Watch spend via the CLI's `api usage` group.
 
 ## Sibling skills
 

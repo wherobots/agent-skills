@@ -26,10 +26,11 @@ The auth method depends on the client:
 - **MCP server (OAuth — most clients)**: Clients authenticate via browser-based OAuth on first connect — you sign in to Wherobots and pick an organization. No API key in `mcp.json`.
 - **MCP server (API key fallback)**: Editors without OAuth support pass `X-Api-Key` via `mcp.json` headers.
   If specified, API keys take precedence over OAuth.
-- **CLI / SDKs**: `WHEROBOTS_API_KEY` env var.
-- **VS Code extension (Wherobots)**: Stores the API key in VS Code
-  SecretStorage (set via Command Palette) and injects it into the MCP
-  connection automatically — no `mcp.json` entry needed.
+- **CLI**: Sign in with `wherobots auth login`, or export `WHEROBOTS_API_KEY` (which wins if both are set).
+- **SDKs**: Pass an API key to `connect()`.
+- **VS Code extension (Wherobots)**: Sign in (OAuth) or set an API key from
+  the Command Palette. The extension supplies the credential to the MCP
+  connection automatically — no `mcp.json` entry needed. OAuth wins if both are set.
 - **Endpoint override**: `WHEROBOTS_API_URL` env var overrides the default
   `https://api.cloud.wherobots.com`.
 
@@ -46,12 +47,13 @@ Use the official Airflow provider (`pip install airflow-providers-wherobots`). T
 3. Use `WherobotsRunOperator` to submit it as a Wherobots job run on a schedule
 
 ```python
-from wherobots.cloud.airflow.operators.run import WherobotsRunOperator
+from airflow_providers_wherobots.operators.run import WherobotsRunOperator
+from wherobots.db import Runtime
 
 WherobotsRunOperator(
     task_id="nc_flood_risk",
-    app_location="s3://my-bucket/jobs/flood_risk_nc.py",
-    runtime="SMALL",
+    run_python={"uri": "s3://my-bucket/jobs/flood_risk_nc.py"},
+    runtime=Runtime.SMALL,
     dag=dag,
 )
 ```
@@ -63,4 +65,4 @@ The full agentic setup flow is achievable without any dashboard access:
 1. Use `wherobots api` to create a service principal and generate its API key
 2. Use `wherobots job-runs create <local-script.py>` to auto-upload the job file
    to managed storage (returns the S3 URI)
-3. Use that S3 URI as `app_location` in `WherobotsRunOperator`
+3. Use that S3 URI as `run_python={"uri": ...}` in `WherobotsRunOperator`

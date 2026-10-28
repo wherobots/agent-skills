@@ -2,7 +2,7 @@
   "name": "wherobots",
   "displayName": "Wherobots",
   "description": "Explore spatial catalogs, generate Spatial SQL, and run queries against Wherobots Cloud without leaving your editor.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Wherobots",
     "email": "support@wherobots.com"
