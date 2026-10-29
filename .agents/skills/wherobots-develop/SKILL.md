@@ -9,12 +9,12 @@ description: Use when writing Wherobots job code, submitting or monitoring jobs,
 
 Before implementing spatial job logic, use the MCP server to understand what data is actually available:
 
-- Use `search_documentation_tool` (MCP) to look up Wherobots features, Sedona spatial
+- Use `search_documentation` (MCP) to look up Wherobots features, Sedona spatial
   functions, storage integration setup, or catalog configuration before implementing.
   If the MCP server is unavailable, browse [docs.wherobots.com](https://docs.wherobots.com/latest/) directly.
-- Browse `wherobots_open_data` with `list_databases_tool` / `list_tables_tool` to find pre-loaded datasets (Overture, FEMA, OpenStreetMap, etc.)
-- Use `describe_table_tool` to confirm geometry column names, CRS, and relevant filter fields
-- Test the spatial logic with `execute_query_tool` using `LIMIT 10` before committing to a job file
+- Browse `wherobots_open_data` with `list_databases` / `list_tables` to find pre-loaded datasets (Overture, Foursquare, Copernicus DEM, NOAA, etc.)
+- Use `describe_table` to confirm geometry column names, CRS, and relevant filter fields
+- Test the spatial logic with `submit_read_query` using `LIMIT 10` before committing to a job file
 
 **Job files**: Store job scripts in **Wherobots Managed Storage** (built-in S3, us-west-2) or in your own S3 bucket via a **Storage Integration**. Both are referenceable as `s3://` URIs in `WherobotsRunOperator` and `wherobots job-runs create`.
 
@@ -37,21 +37,24 @@ When implementing a workflow that involves Wherobots API operations (creating jo
 The `wherobots` CLI generates `wherobots api` subcommands from a live OpenAPI spec that changes without notice. Never hardcode or memorize `api` subcommand names.
 
 - **Always discover at runtime**: `wherobots --help` and `wherobots <command> --help`
-- **Spec cache**: CLI caches the OpenAPI spec at `~/.cache/wherobots/spec.json` (15-min TTL). If commands seem missing after a server update, delete this file.
+- **Spec cache**: CLI caches the OpenAPI spec as `spec-*.json` under `wherobots/` in the user cache dir (`~/Library/Caches/wherobots/` on macOS, `~/.cache/wherobots/` on Linux), with a 15-min TTL (`OPENAPI_CACHE_TTL` overrides it). If commands seem missing after a server update, delete these files.
 
 ## Non-Obvious Global Flags
 
-These flags work on all commands but are not shown in the `--help` summary:
-
-- `--output json` -- machine-parseable JSON output (default is human-readable table)
 - `--dry-run` -- prints the equivalent `curl` command without executing
 - `--tree` -- prints the whole command tree (`wherobots --tree`, `wherobots api --tree`). Faster than
   guessing leaf names in the large, spec-generated `api` surface.
 - `-y, --yes` -- skip the confirmation prompt in CI/scripts
+- `--json '<body>'` -- raw JSON request body for `api` commands; overrides the individual body field flags
+- `-q, --query key=value` -- add a query parameter to an `api` request (repeatable)
 
-**`--dry-run` is not an offline mode.** `WHEROBOTS_API_KEY` must still be exported: the CLI
-authenticates before rendering the curl, and `job-runs create` on a *local* script calls the API to
-resolve the managed-storage upload path before it can render anything. Point it at an `s3://` script
+`--output json` is not global: `job-runs` (`create`, `logs`, `list`, `metrics`) and `files my-files ls` take it
+for machine-parseable output (default is human-readable text).
+
+**`--dry-run` is not an offline mode.** You still need credentials (a `wherobots auth login`
+session or an exported `WHEROBOTS_API_KEY`): the CLI authenticates before rendering the curl, and
+`job-runs create` on a *local* script calls the API to resolve the managed-storage upload path
+before it can render anything. Point it at an `s3://` script
 or pass `--no-upload` if you want a dry run without that call.
 
 ## Job Submission Workflow
@@ -61,7 +64,7 @@ This multi-step process has non-obvious behavior:
 1. **Auto-upload**: Passing a local `.py` file to the CLI auto-uploads it to S3 via a presigned URL (500 MB limit). No manual upload step is needed.
 2. **Watch mode**: Use `--watch` on `create` to stream logs inline instead of running `logs` separately afterward.
 3. **Re-attach to logs**: `logs --follow` re-attaches to a running job's log stream after disconnecting.
-4. **Auth**: `WHEROBOTS_API_KEY` env var is required. `WHEROBOTS_API_URL` overrides the default endpoint.
+4. **Auth**: Sign in with `wherobots auth login`, or export `WHEROBOTS_API_KEY` (which wins if both are set). `WHEROBOTS_API_URL` overrides the default endpoint.
 5. **Prefer `job-runs` over `api runs`**: `job-runs create` takes the script as a positional arg and
    handles local-file auto-upload, `--watch`, and `--dep-pypi`/`--dep-file`. `api runs create-job-run`
    is the raw POST — `s3://` scripts only, via `--runpython`. Use it when you need an API field the
@@ -69,9 +72,9 @@ This multi-step process has non-obvious behavior:
 6. **Raw `api` bodies are camelCase, the flags are not**: `--runpython` sets `runPython`,
    `--timeoutseconds` sets `timeoutSeconds`. Matters when you hand-write a body via `--json`, which
    overrides the individual field flags. Object/array values must be JSON strings.
-7. **Size the runtime deliberately**: the `job-runs create` default is `tiny`, which is too small for
-   a real spatial join. Defaults for region (`aws-us-west-2`) and `--timeout` (3600s) are likewise
-   sized for smoke tests, not production runs.
+7. **Size the runtime deliberately**: left unset, `--runtime` and `--run-region` use your
+   organization's defaults, which may be too small for a real spatial join. The `--timeout` default
+   (3600s) is sized for smoke tests, not production runs.
 
 ## Cost Hygiene
 
@@ -92,7 +95,7 @@ from wherobots.db import connect, Runtime
 # connect() blocks until the runtime is ready (async session startup)
 conn = connect(api_key="...", runtime=Runtime.SMALL)
 cursor = conn.cursor()
-cursor.execute("SELECT ST_Area(geometry) FROM wherobots_open_data.overture.building LIMIT 5")
+cursor.execute("SELECT ST_Area(geometry) FROM wherobots_open_data.overture_maps_foundation.buildings_building LIMIT 5")
 results = cursor.fetchall()
 ```
 
@@ -112,4 +115,4 @@ The npm package name is `wherobots-sql-driver`, not `wherobots-typescript-sdk`. 
 
 ## VS Code Extension
 
-The Wherobots VS Code extension provides an MCP server for Copilot Chat, a Jupyter kernel picker for remote workspaces, and a Data Hub browser. It registers the MCP server automatically -- no manual configuration is needed if the extension is installed and an API key is set.
+The Wherobots VS Code extension provides an MCP server for Copilot Chat, a Jupyter kernel picker for remote workspaces, and a Data Hub browser. It registers the MCP server automatically -- no manual configuration is needed once the extension is installed and you sign in (OAuth) or set an API key.

@@ -140,7 +140,7 @@ Examples: `org_catalog.silver.asset_wildfire_exposure` (1:1), `org_catalog.silve
 | Vector (lines) | **snap a point to nearest road/line?** | point-to-line distance | `ST_DistanceSphere(pt, line)` + `ST_DWithin`; position via `ST_LineLocatePoint` |
 
 > **Validate the exact signature before shipping.** Sedona signatures differ from PostGIS and evolve
-> across versions. When MCP is available, confirm with `search_documentation_tool`; otherwise mark
+> across versions. When MCP is available, confirm with `search_documentation`; otherwise mark
 > the SQL unverified. These notes were last cross-checked against the Wherobots function reference on
 > 2026-07-10 but are version-sensitive.
 

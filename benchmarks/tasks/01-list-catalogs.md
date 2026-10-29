@@ -13,7 +13,7 @@ List all available data catalogs in the Wherobots platform and display their nam
 ## Success Criteria
 
 - [ ] Agent correctly identifies MCP as the appropriate tool (not CLI or SDK)
-- [ ] Agent calls `list_catalogs_tool` via the MCP server
+- [ ] Agent calls `list_catalogs` via the MCP server
 - [ ] Output includes the names of all available catalogs
 - [ ] Agent does not attempt to use CLI or SDK for this discovery task
 
