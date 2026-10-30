@@ -163,8 +163,21 @@ jobs:
             exit 1
           }
 
-          # The power ships the same url-only entry as the root mcp.json.
-          diff mcp.json powers/wherobots/mcp.json
+          # Kiro loads no servers from a power whose mcp.json fails this schema. It needs
+          # "type", which Cursor rejects, so the two files can only share the URL.
+          ajv validate --spec=draft2020 -c ajv-formats \
+            -s schemas/agent-mcp.schema.json \
+            -d powers/wherobots/mcp.json
+
+          python3 - <<'PY'
+          import json
+          import sys
+
+          root = json.load(open("mcp.json"))["mcpServers"]
+          power = json.load(open("powers/wherobots/mcp.json"))["mcpServers"]
+          if {n: s["url"] for n, s in root.items()} != {n: s["url"] for n, s in power.items()}:
+              sys.exit("ERROR: powers/wherobots/mcp.json and mcp.json list different servers or URLs.")
+          PY
 
       - name: Validate Claude Code plugin and marketplace
         env:

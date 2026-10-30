@@ -88,12 +88,12 @@ The repository root is both the Cursor plugin and the Claude Code plugin, so bot
 | `.claude-plugin/plugin.json` | Claude Code plugin manifest. Declares the same MCP server inline, plus the skills path |
 | `.claude-plugin/marketplace.json` | Claude Code marketplace `wherobots`, listing the plugin at the repo root |
 | `powers/wherobots/` | Kiro power: manifest, MCP server entry, and a copy of the skills |
-| `schemas/agent-plugin.schema.json` | Agent Plugins manifest schema, vendored for CI |
+| `schemas/agent-plugin.schema.json`, `schemas/agent-mcp.schema.json` | Agent Plugins schemas, vendored for CI |
 | `assets/logo.svg` | Marketplace listing icon |
 
 A few constraints shape this layout. Cursor manifest paths cannot use parent traversal, so a plugin in a subdirectory could not reach `.agents/skills/`, which is why the plugin sits at the repo root. Both manifests set `skills` to `.agents/skills` rather than the default `skills/` directory, because the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=Wherobots.wherobotsjobsubmit) resolves skills from that path. And the two tools disagree on the MCP entry: Claude Code requires `"type": "http"` on a remote server and drops an entry without it, while Cursor rejects that field. So `mcp.json` stays Cursor-shaped, the Claude manifest carries its own copy, and CI fails if the two drift apart.
 
-Kiro needs its own copy of the skills in `powers/wherobots/skills`. Its installer doesn't follow symlinks, and its manifest format has no field for a custom skills path, so the power can't reuse `.agents/skills` directly. CI fails if the copy drifts, and also validates `powers/wherobots/plugin.json` against the vendored Agent Plugins schema. Bump `version` there whenever skills or the MCP server change.
+Kiro needs its own copy of the skills in `powers/wherobots/skills`. Its installer doesn't follow symlinks, and its manifest format has no field for a custom skills path, so the power can't reuse `.agents/skills` directly. Its `mcp.json` needs `$schema` and `"type": "streamable-http"`, or Kiro loads no servers from the power, so it can't match the root file either. CI fails if the skills or server URL drift, and validates both power files against the vendored Agent Plugins schemas. Bump `version` there whenever skills or the MCP server change.
 
 CI runs `claude plugin validate --strict` on both Claude Code manifests. Claude Code keeps users on the installed copy until the `version` in `.claude-plugin/plugin.json` changes, so bump it whenever skills or the MCP server change.
 

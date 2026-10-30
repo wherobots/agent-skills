@@ -12,7 +12,7 @@ https://github.com/wherobots/agent-skills/tree/main/powers/wherobots
 
 ## Sign in
 
-Open the Kiro panel, find `wherobots-mcp-server` under **MCP Servers**, and choose **Authenticate**. Kiro opens a browser so you can sign in to Wherobots and pick an organization.
+Open the Kiro panel, find `power-wherobots-wherobots-mcp-server` under **MCP Servers**, and choose **Authenticate**. Kiro opens a browser so you can sign in to Wherobots and pick an organization.
 
 Setup without the power, including the API key alternative to OAuth, is documented at [Set Up Wherobots in Kiro](https://docs.wherobots.com/develop/agentic-tools/editors#kiro).
 
