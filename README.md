@@ -81,6 +81,18 @@ CI runs `claude plugin validate --strict` on both Claude Code manifests. Claude 
 
 Bump `version` in `.cursor-plugin/plugin.json` for every Cursor marketplace submission. Cursor manually reviews each release.
 
+## Discovery index
+
+`.well-known/agent-skills/index.json` lists every skill in the [Agent Skills Discovery v0.2.0](https://github.com/cloudflare/agent-skills-discovery-rfc) format, with a sha256 digest of each `SKILL.md`. Sites that publish Wherobots skills for agents, such as wherobots.com, copy their entries from it.
+
+Rebuild it whenever you add, rename or edit a skill:
+
+```bash
+python3 scripts/build_discovery_index.py
+```
+
+CI runs the same script with `--check` and fails when the committed index does not match the skills.
+
 ## Design Philosophy
 
 Every line in a skill must pass this test: **"Does this make the agent measurably more effective, or can the agent already discover this from `--help` / MCP tool descriptions?"**
