@@ -1,0 +1,17 @@
+{
+  "name": "wherobots",
+  "description": "Wherobots plugins for Claude Code.",
+  "owner": {
+    "name": "Wherobots",
+    "email": "support@wherobots.com"
+  },
+  "plugins": [
+    {
+      "name": "wherobots",
+      "source": "./",
+      "description": "Wherobots MCP server and agent skills for spatial analytics on Wherobots Cloud.",
+      "category": "integrations",
+      "tags": ["geospatial", "spatial-sql", "mcp", "data"]
+    }
+  ]
+}

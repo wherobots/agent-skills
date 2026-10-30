@@ -7,7 +7,7 @@ description: Use when writing, reviewing, or debugging WherobotsDB/Sedona Spatia
 
 WherobotsDB is Apache Sedona on Spark. Spatial functions are `ST_*` and mostly *look* like PostGIS
 but signatures and behavior differ — **don't guess from PostGIS memory.** When unsure a function
-exists or how it behaves, check the Wherobots function reference (MCP `search_documentation_tool`)
+exists or how it behaves, check the Wherobots function reference (MCP `search_documentation`)
 or validate on a bounded sample before trusting it.
 
 ## Use the validated pattern library

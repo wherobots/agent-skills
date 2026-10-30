@@ -16,7 +16,9 @@ Agent skills for the [Wherobots](https://wherobots.com) spatial analytics platfo
 
 ## Installation
 
-### Via skills.sh (Claude Code, any agent)
+### Via skills.sh (any agent)
+
+Installs the skills only. To get the Wherobots MCP server as well, use one of the plugins below.
 
 ```bash
 npx skills add wherobots/agent-skills@wherobots-usage
@@ -30,7 +32,24 @@ npx skills add wherobots/agent-skills@wherobots-area-weighted-interpolation
 
 ### Via Wherobots VS Code Extension
 
-Skills are bundled in the [Wherobots VS Code extension](https://marketplace.visualstudio.com/items?itemName=Wherobots.wherobotsjobsubmit) and available automatically in Copilot Chat and Claude Code when the extension is installed.
+Skills are bundled in the [Wherobots VS Code extension](https://marketplace.visualstudio.com/items?itemName=Wherobots.wherobotsjobsubmit) and available automatically in Copilot Chat and Claude Code when the extension is installed. This route installs the skills only, not the MCP server.
+
+### Via Claude Code plugin
+
+This repository is also a Claude Code plugin marketplace. Installing the `wherobots` plugin registers the Wherobots MCP server and all seven skills in one step. In Claude Code, run:
+
+```text
+/plugin marketplace add wherobots/agent-skills
+/plugin install wherobots@wherobots
+```
+
+Then run `/reload-plugins`, or restart Claude Code. From a shell, the same steps are `claude plugin marketplace add wherobots/agent-skills` and `claude plugin install wherobots@wherobots`.
+
+The skills appear as `/wherobots:<skill>`, for example `/wherobots:wherobots-explore`, and Claude also loads them on its own when a task matches. The MCP server appears in `/mcp` as `plugin:wherobots:wherobots-mcp-server` and is marked as needing authentication until you sign in: run `/mcp`, select the server, and authenticate. A browser opens to sign in to Wherobots and pick an organization. Headless `claude -p` runs cannot open a browser, so sign in from an interactive session first, or use an API key as described next.
+
+For CI, scripts, or anywhere browser sign-in isn't possible, use a Wherobots API key instead: add the server yourself with an `x-api-key` header as described in [Set Up Wherobots in Claude Code](https://docs.wherobots.com/develop/agentic-tools/claude-code), and turn off the plugin's copy of the server in `/mcp`. The two don't collide: the plugin's copy is always listed as `plugin:wherobots:wherobots-mcp-server`.
+
+The plugin does not install the [Wherobots CLI](https://docs.wherobots.com/develop/cli), which the `wherobots-develop` skill uses to submit jobs. Install it separately; the Claude Code setup page above covers it.
 
 ### Via the Cursor marketplace
 
@@ -44,19 +63,23 @@ git clone https://github.com/wherobots/agent-skills ~/.cursor/plugins/local/wher
 
 Reload Cursor, then check **Cursor Settings > Tools & MCPs** for `wherobots-mcp-server`. The first tool call opens a browser to sign in to Wherobots and pick an organization. Manual setup, including the API key alternative to OAuth, is documented at [Set Up Wherobots in Cursor](https://docs.wherobots.com/develop/agentic-tools/cursor).
 
-## Cursor plugin
+## Plugin layout
 
-The repository root is the plugin, so Cursor ships the same `SKILL.md` files that CI validates here. There is no vendored copy to keep in sync.
+The repository root is both the Cursor plugin and the Claude Code plugin, so both ship the same `SKILL.md` files that CI validates here. There is no vendored copy to keep in sync.
 
 | Path | Purpose |
 |---|---|
-| `.cursor-plugin/plugin.json` | Plugin manifest, validated in CI against Cursor's published schema |
-| `mcp.json` | Registers `wherobots-mcp-server` at `https://api.cloud.wherobots.com/mcp/` |
+| `.cursor-plugin/plugin.json` | Cursor plugin manifest, validated in CI against Cursor's published schema |
+| `mcp.json` | Registers `wherobots-mcp-server` at `https://api.cloud.wherobots.com/mcp/` for Cursor |
+| `.claude-plugin/plugin.json` | Claude Code plugin manifest. Declares the same MCP server inline, plus the skills path |
+| `.claude-plugin/marketplace.json` | Claude Code marketplace `wherobots`, listing the plugin at the repo root |
 | `assets/logo.svg` | Marketplace listing icon |
 
-Two constraints shape this layout. Cursor manifest paths cannot use parent traversal, so a plugin in a subdirectory could not reach `.agents/skills/`, which is why the plugin sits at the repo root. And `skills` is set explicitly to `.agents/skills` rather than Cursor's default `skills/` directory, because the [VS Code extension](https://github.com/wherobots/vs-code-extension) resolves skills from that path.
+A few constraints shape this layout. Cursor manifest paths cannot use parent traversal, so a plugin in a subdirectory could not reach `.agents/skills/`, which is why the plugin sits at the repo root. Both manifests set `skills` to `.agents/skills` rather than the default `skills/` directory, because the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=Wherobots.wherobotsjobsubmit) resolves skills from that path. And the two tools disagree on the MCP entry: Claude Code requires `"type": "http"` on a remote server and drops an entry without it, while Cursor rejects that field. So `mcp.json` stays Cursor-shaped, the Claude manifest carries its own copy, and CI fails if the two drift apart.
 
-Bump `version` in `plugin.json` for every marketplace submission. Cursor manually reviews each release.
+CI runs `claude plugin validate --strict` on both Claude Code manifests. Claude Code keeps users on the installed copy until the `version` in `.claude-plugin/plugin.json` changes, so bump it whenever skills or the MCP server change.
+
+Bump `version` in `.cursor-plugin/plugin.json` for every Cursor marketplace submission. Cursor manually reviews each release.
 
 ## Discovery index
 
@@ -107,7 +130,8 @@ The `benchmarks/` directory contains tasks for evaluating skill effectiveness. S
 2. Create a branch (`feat/improve-explore-skill`)
 3. Edit the relevant `SKILL.md` file
 4. Ensure frontmatter is valid: `name` must match the parent directory, `description` is required
-5. Open a pull request -- CI will validate frontmatter and lint markdown
+5. If the change should reach Claude Code plugin users, bump `version` in `.claude-plugin/plugin.json`
+6. Open a pull request -- CI will validate frontmatter, lint markdown, and check both plugin manifests
 
 ## License
 

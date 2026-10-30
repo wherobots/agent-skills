@@ -14,7 +14,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install validation tools
         run: npm install -g ajv-cli ajv-formats markdownlint-cli
@@ -146,4 +146,44 @@ jobs:
               sys.exit(1)
 
           print(f"Cursor plugin OK: {len(skills)} skills, {len(servers)} MCP server(s)")
+          PY
+
+      - name: Validate Claude Code plugin and marketplace
+        env:
+          # Pinned so a validator change upstream cannot turn CI red without a
+          # commit here. Bump deliberately.
+          CLAUDE_CODE_VERSION: 2.1.311
+        run: |
+          set -euo pipefail
+          npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+          # --strict fails on warnings too, such as unknown manifest fields.
+          claude plugin validate --strict .claude-plugin/plugin.json
+          claude plugin validate --strict .claude-plugin/marketplace.json
+
+          # Claude Code needs "type" on a remote MCP server and Cursor rejects it,
+          # so each manifest declares the server in its own shape. Keep them in step.
+          python3 - <<'PY'
+          import json, sys
+
+          claude_manifest = json.load(open(".claude-plugin/plugin.json"))
+          cursor_manifest = json.load(open(".cursor-plugin/plugin.json"))
+          claude = claude_manifest["mcpServers"]
+          cursor = json.load(open("mcp.json"))["mcpServers"]
+
+          errors = []
+          if claude_manifest["skills"].removeprefix("./") != cursor_manifest["skills"].removeprefix("./"):
+              errors.append("skills: Claude and Cursor manifests point at different directories")
+          if set(claude) != set(cursor):
+              errors.append(f"server names differ: Claude {sorted(claude)} vs Cursor {sorted(cursor)}")
+          for name in set(claude) & set(cursor):
+              if claude[name].get("type") != "http":
+                  errors.append(f"'{name}': Claude Code needs \"type\": \"http\" in .claude-plugin/plugin.json")
+              if {k: v for k, v in claude[name].items() if k != "type"} != cursor[name]:
+                  errors.append(f"'{name}': entry differs between .claude-plugin/plugin.json and mcp.json (beyond \"type\")")
+
+          if errors:
+              print("\n".join(f"ERROR: {e}" for e in errors))
+              sys.exit(1)
+          print(f"Claude Code plugin OK: MCP servers match mcp.json ({', '.join(sorted(claude))})")
           PY

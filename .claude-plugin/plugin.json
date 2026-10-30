@@ -1,0 +1,32 @@
+{
+  "name": "wherobots",
+  "displayName": "Wherobots",
+  "description": "Explore spatial catalogs, generate Spatial SQL, and run queries against Wherobots Cloud without leaving your editor.",
+  "version": "1.0.1",
+  "author": {
+    "name": "Wherobots",
+    "email": "support@wherobots.com"
+  },
+  "homepage": "https://docs.wherobots.com/develop/agentic-tools/claude-code",
+  "repository": "https://github.com/wherobots/agent-skills",
+  "license": "MIT",
+  "supportUrl": "https://docs.wherobots.com/support",
+  "privacyPolicyUrl": "https://wherobots.com/privacy-policy/",
+  "termsOfServiceUrl": "https://wherobots.com/terms-conditions/",
+  "keywords": [
+    "wherobots",
+    "geospatial",
+    "spatial",
+    "sedona",
+    "spatial-sql",
+    "gis",
+    "mcp"
+  ],
+  "skills": "./.agents/skills",
+  "mcpServers": {
+    "wherobots-mcp-server": {
+      "type": "http",
+      "url": "https://api.cloud.wherobots.com/mcp/"
+    }
+  }
+}

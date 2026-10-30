@@ -25,7 +25,7 @@ it against production data.
 - [ ] Trip line construction orders points before `ST_MakeLine` (`COLLECT_LIST` is unordered) and
       filters to >= 2 points
 - [ ] Output is GeoParquet plus an Iceberg table; no shapefile anywhere in the design
-- [ ] Runtime is sized above the `tiny` default for the spatial join
+- [ ] Runtime is sized deliberately for the spatial join, not left at the org default
 
 ## Allowed Tools
 
