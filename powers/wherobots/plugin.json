@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "wherobots",
+  "version": "1.0.0",
+  "description": "Explore catalogs, run spatial SQL, and build geospatial pipelines on Wherobots.",
+  "author": {
+    "name": "Wherobots",
+    "url": "https://wherobots.com"
+  },
+  "homepage": "https://docs.wherobots.com/develop/agentic-tools/editors#kiro",
+  "repository": "https://github.com/wherobots/agent-skills",
+  "license": "MIT",
+  "keywords": [
+    "wherobots",
+    "geospatial",
+    "spatial sql",
+    "apache sedona",
+    "rasterflow",
+    "overture maps"
+  ]
+}
