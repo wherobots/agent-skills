@@ -51,6 +51,20 @@ For CI, scripts, or anywhere browser sign-in isn't possible, use a Wherobots API
 
 The plugin does not install the [Wherobots CLI](https://docs.wherobots.com/develop/cli), which the `wherobots-develop` skill uses to submit jobs. Install it separately; the Claude Code setup page above covers it.
 
+### Via Kiro
+
+This repository includes a Kiro power at [`powers/wherobots`](powers/wherobots). Installing it registers the Wherobots MCP server and all seven skills in one step.
+
+In the Kiro IDE, open the **Powers** panel, choose **Add Custom Power**, then **Import power from GitHub**, and enter:
+
+```text
+https://github.com/wherobots/agent-skills/tree/main/powers/wherobots
+```
+
+From a clone of this repository, Kiro CLI installs it with `kiro-cli powers install ./powers/wherobots`.
+
+Kiro opens a browser to sign in to Wherobots and pick an organization when you authenticate the server. Manual setup, including the API key alternative to OAuth, is documented at [Set Up Wherobots in Kiro](https://docs.wherobots.com/develop/agentic-tools/editors#kiro).
+
 ### Via the Cursor marketplace
 
 This repository is also a Cursor plugin. Installing it registers the Wherobots MCP server and all seven skills in one step, with no manual `.cursor/mcp.json` editing. Search for **Wherobots** in [Cursor's marketplace](https://cursor.com/marketplace).
@@ -65,7 +79,7 @@ Reload Cursor, then check **Cursor Settings > Tools & MCPs** for `wherobots-mcp-
 
 ## Plugin layout
 
-The repository root is both the Cursor plugin and the Claude Code plugin, so both ship the same `SKILL.md` files that CI validates here. There is no vendored copy to keep in sync.
+The repository root is both the Cursor plugin and the Claude Code plugin, so both ship the same `SKILL.md` files that CI validates here. The Kiro power is the one vendored copy, and CI keeps it in sync.
 
 | Path | Purpose |
 |---|---|
@@ -73,9 +87,13 @@ The repository root is both the Cursor plugin and the Claude Code plugin, so bot
 | `mcp.json` | Registers `wherobots-mcp-server` at `https://api.cloud.wherobots.com/mcp/` for Cursor |
 | `.claude-plugin/plugin.json` | Claude Code plugin manifest. Declares the same MCP server inline, plus the skills path |
 | `.claude-plugin/marketplace.json` | Claude Code marketplace `wherobots`, listing the plugin at the repo root |
+| `powers/wherobots/` | Kiro power: manifest, MCP server entry, and a copy of the skills |
+| `schemas/agent-plugin.schema.json` | Agent Plugins manifest schema, vendored for CI |
 | `assets/logo.svg` | Marketplace listing icon |
 
 A few constraints shape this layout. Cursor manifest paths cannot use parent traversal, so a plugin in a subdirectory could not reach `.agents/skills/`, which is why the plugin sits at the repo root. Both manifests set `skills` to `.agents/skills` rather than the default `skills/` directory, because the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=Wherobots.wherobotsjobsubmit) resolves skills from that path. And the two tools disagree on the MCP entry: Claude Code requires `"type": "http"` on a remote server and drops an entry without it, while Cursor rejects that field. So `mcp.json` stays Cursor-shaped, the Claude manifest carries its own copy, and CI fails if the two drift apart.
+
+Kiro needs its own copy of the skills in `powers/wherobots/skills`. Its installer doesn't follow symlinks, and its manifest format has no field for a custom skills path, so the power can't reuse `.agents/skills` directly. CI fails if the copy drifts, and also validates `powers/wherobots/plugin.json` against the vendored Agent Plugins schema. Bump `version` there whenever skills or the MCP server change.
 
 CI runs `claude plugin validate --strict` on both Claude Code manifests. Claude Code keeps users on the installed copy until the `version` in `.claude-plugin/plugin.json` changes, so bump it whenever skills or the MCP server change.
 
@@ -119,7 +137,8 @@ The `benchmarks/` directory contains tasks for evaluating skill effectiveness. S
 3. Edit the relevant `SKILL.md` file
 4. Ensure frontmatter is valid: `name` must match the parent directory, `description` is required
 5. If the change should reach Claude Code plugin users, bump `version` in `.claude-plugin/plugin.json`
-6. Open a pull request -- CI will validate frontmatter, lint markdown, and check both plugin manifests
+6. Copy the change to the Kiro power with `rm -rf powers/wherobots/skills && cp -R .agents/skills powers/wherobots/skills`, and bump `version` in `powers/wherobots/plugin.json`
+7. Open a pull request -- CI will validate frontmatter, lint markdown, and check every plugin manifest
 
 ## License
 
