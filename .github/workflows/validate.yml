@@ -145,6 +145,27 @@ jobs:
           print(f"Cursor plugin OK: {len(skills)} skills, {len(servers)} MCP server(s)")
           PY
 
+      - name: Validate Kiro power
+        run: |
+          set -euo pipefail
+
+          # Schema is vendored verbatim so CI enforces the published manifest rules.
+          # Refresh it from https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
+          ajv validate --spec=draft2020 -c ajv-formats \
+            -s schemas/agent-plugin.schema.json \
+            -d powers/wherobots/plugin.json
+
+          # Kiro copies a power without following symlinks, so the power carries real
+          # files. The plugin manifest also has no field for a custom skills path.
+          diff -r .agents/skills powers/wherobots/skills || {
+            echo "ERROR: powers/wherobots/skills has drifted from .agents/skills."
+            echo "Run: rm -rf powers/wherobots/skills && cp -R .agents/skills powers/wherobots/skills"
+            exit 1
+          }
+
+          # The power ships the same url-only entry as the root mcp.json.
+          diff mcp.json powers/wherobots/mcp.json
+
       - name: Validate Claude Code plugin and marketplace
         env:
           # Pinned so a validator change upstream cannot turn CI red without a
