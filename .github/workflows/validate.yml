@@ -145,6 +145,40 @@ jobs:
           print(f"Cursor plugin OK: {len(skills)} skills, {len(servers)} MCP server(s)")
           PY
 
+      - name: Validate Kiro power
+        run: |
+          set -euo pipefail
+
+          # Schema is vendored verbatim so CI enforces the published manifest rules.
+          # Refresh it from https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
+          ajv validate --spec=draft2020 -c ajv-formats \
+            -s schemas/agent-plugin.schema.json \
+            -d powers/wherobots/plugin.json
+
+          # Kiro copies a power without following symlinks, so the power carries real
+          # files. The plugin manifest also has no field for a custom skills path.
+          diff -r .agents/skills powers/wherobots/skills || {
+            echo "ERROR: powers/wherobots/skills has drifted from .agents/skills."
+            echo "Run: rm -rf powers/wherobots/skills && cp -R .agents/skills powers/wherobots/skills"
+            exit 1
+          }
+
+          # Kiro loads no servers from a power whose mcp.json fails this schema. It needs
+          # "type", which Cursor rejects, so the two files can only share the URL.
+          ajv validate --spec=draft2020 -c ajv-formats \
+            -s schemas/agent-mcp.schema.json \
+            -d powers/wherobots/mcp.json
+
+          python3 - <<'PY'
+          import json
+          import sys
+
+          root = json.load(open("mcp.json"))["mcpServers"]
+          power = json.load(open("powers/wherobots/mcp.json"))["mcpServers"]
+          if {n: s["url"] for n, s in root.items()} != {n: s["url"] for n, s in power.items()}:
+              sys.exit("ERROR: powers/wherobots/mcp.json and mcp.json list different servers or URLs.")
+          PY
+
       - name: Validate Claude Code plugin and marketplace
         env:
           # Pinned so a validator change upstream cannot turn CI red without a
