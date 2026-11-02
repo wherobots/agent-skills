@@ -1,0 +1,82 @@
+name: OpenAI plugin
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/openai/**'
+      - 'schemas/agent-*.schema.json'
+      - '.github/workflows/openai-plugin.yml'
+      - 'assets/logo.svg'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install schema validator
+        run: python -m pip install jsonschema==4.26.0
+      - name: Validate package
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          from jsonschema import Draft202012Validator
+
+          root = Path("plugins/openai")
+          # Vendored from https://agent-plugins.org/schemas/1.0.0/.
+          for filename, schema in (
+              ("plugin.json", "agent-plugin.schema.json"),
+              ("mcp.json", "agent-mcp.schema.json"),
+          ):
+              validator = Draft202012Validator(json.loads((Path("schemas") / schema).read_text()))
+              validator.validate(json.loads((root / filename).read_text()))
+
+          manifest = json.loads((root / "plugin.json").read_text())
+          metadata = manifest["extensions"]["com.openai"]
+          listing = metadata["interface"]
+          for field, limit in (("displayName", 30), ("shortDescription", 30),
+                               ("longDescription", 4000), ("developerName", 80)):
+              assert 0 < len(listing[field]) <= limit, field
+          for field in ("websiteURL", "supportURL", "privacyPolicyURL", "termsOfServiceURL"):
+              assert listing[field].startswith("https://"), field
+          for field in ("logo", "composerIcon"):
+              icon = (root / listing[field]).resolve()
+              assert icon.is_relative_to(root.resolve()) and icon.is_file(), field
+              svg = ET.parse(icon).getroot()
+              _, _, width, height = map(float, svg.attrib["viewBox"].split())
+              assert width == height and width >= 48, field
+          assert (root / "assets/logo.svg").read_bytes() == Path("assets/logo.svg").read_bytes()
+          assert (root / "LICENSE").read_bytes() == Path("LICENSE").read_bytes()
+          cases = metadata["review"]["test_cases"]
+          assert len(cases["positive"]) == 5 and len(cases["negative"]) == 3
+          assert len(listing["defaultPrompt"]) <= 3
+          assert all(len(prompt) <= 128 for prompt in listing["defaultPrompt"])
+          servers = json.loads((root / "mcp.json").read_text())["mcpServers"]
+          assert len(servers) == 1
+          server = servers["wherobots"]
+          assert server["url"] == "https://api.cloud.wherobots.com/mcp/"
+          assert server["type"] == "streamable-http"
+          assert "headers" not in server, "Credentials must not be packaged"
+          print("Package checks passed. Portal scans and reviewer setup are still required.")
+          PY
+      - name: Build ZIP
+        working-directory: plugins/openai
+        run: |
+          mkdir -p ../../dist
+          zip -X ../../dist/wherobots-openai.zip plugin.json mcp.json assets/logo.svg LICENSE
+          unzip -t ../../dist/wherobots-openai.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wherobots-openai-plugin
+          path: dist/wherobots-openai.zip
+          if-no-files-found: error
