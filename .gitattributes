@@ -1,0 +1,4 @@
+# Skill digests in .well-known/agent-skills/index.json hash the LF bytes stored in Git,
+# so checkouts must not convert line endings.
+*.md text eol=lf
+*.json text eol=lf

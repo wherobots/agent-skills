@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "wherobots-area-weighted-interpolation",
+      "type": "skill-md",
+      "description": "Use when transferring a statistic between non-matching polygon layers on Wherobots — areal/area-weighted interpolation, spatial enrichment, apportionment (census population to zip codes), dasymetric weighting. Covers extensive-vs-intensive, dissolve-first, and CRS gotchas. Sedona, not PostGIS.",
+      "url": "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/wherobots-area-weighted-interpolation/SKILL.md",
+      "digest": "sha256:0497152fc8638152390587c6893a6ad7467c8a9e2a36daa12ca611ba3f783e52"
+    },
+    {
+      "name": "wherobots-develop",
+      "type": "skill-md",
+      "description": "Use when writing Wherobots job code, submitting or monitoring jobs, or integrating with the Python/TypeScript SDK — covers CLI discovery patterns, non-obvious flags, job workflows, storage options, and data connectivity.",
+      "url": "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/wherobots-develop/SKILL.md",
+      "digest": "sha256:4adfba811fc9c8c729fedb98bf752a8b7a7511e6b85d1e57f8fc0869624e643b"
+    },
+    {
+      "name": "wherobots-explore",
+      "type": "skill-md",
+      "description": "Use when exploring Wherobots catalogs, discovering table schemas, or generating spatial queries — covers the MCP tool workflow sequence and constraints.",
+      "url": "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/wherobots-explore/SKILL.md",
+      "digest": "sha256:d22c0b92ae62c3da1f81616d5b473401b688ce062de9fc3c9317c63c3459b785"
+    },
+    {
+      "name": "wherobots-open-data-catalog",
+      "type": "skill-md",
+      "description": "Use when working with the Wherobots Open Data Catalog — which datasets exist and their schemas, join keys, CRS, and quirks. Covers wherobots_open_data (Overture, Foursquare, rasters), release snapshots, and category taxonomies so you pick the right table and columns without guessing.",
+      "url": "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/wherobots-open-data-catalog/SKILL.md",
+      "digest": "sha256:ba763f25042e3654f91a8407f85943f2781c550c8f48ecdbdcee7bbfbe166227"
+    },
+    {
+      "name": "wherobots-pipeline-designer",
+      "type": "skill-md",
+      "description": "Use when designing, productionizing, or auditing geospatial pipelines on Wherobots as medallion (Bronze/Silver/Gold) architectures over Iceberg/Havasu — layer contracts, table naming, partitioning, quality gates, idempotency, job submission. For ETL, enrichment, and map-matching pipelines.",
+      "url": "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/wherobots-pipeline-designer/SKILL.md",
+      "digest": "sha256:a7e1b198f4eeabe6a1d969d832d6bacc7d67ecdfabc91d5224d6f86b46157b1e"
+    },
+    {
+      "name": "wherobots-spatial-sql-patterns",
+      "type": "skill-md",
+      "description": "Use when writing, reviewing, or debugging WherobotsDB/Sedona Spatial SQL — point-in-polygon, distance (ST_DWithin), spatial joins, KNN, aggregation, CRS transforms, flattening nested Overture structs (EXPLODE). Covers Sedona-vs-PostGIS dialect gotchas and Spark semantics.",
+      "url": "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/wherobots-spatial-sql-patterns/SKILL.md",
+      "digest": "sha256:1a2ed50d1f3a02f9fb115d06a2e3d54085b0b8c7ea2906d3afa919a50e05d9c4"
+    },
+    {
+      "name": "wherobots-usage",
+      "type": "skill-md",
+      "description": "Use whenever working on any Wherobots task — provides the interface decision matrix (MCP vs CLI vs SDK vs dashboard), auth and service principal setup, and scheduled job patterns with Airflow.",
+      "url": "https://raw.githubusercontent.com/wherobots/agent-skills/main/.agents/skills/wherobots-usage/SKILL.md",
+      "digest": "sha256:fc0b858a45601e1da52db3993127648eddab152113c97ff107891e80d0889a33"
+    }
+  ]
+}
